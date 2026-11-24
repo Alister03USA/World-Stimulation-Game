@@ -1,12 +1,15 @@
 {
-  "name": "abyssal-garden",
+  "name": "world-stimulation-game",
   "private": true,
-  "description": "A procedural underwater world rendered with WebGPU, bundled into one HTML file",
+  "description": "A first-person Jurassic coastal survival game built on Abyssal Garden",
   "type": "module",
   "scripts": {
-    "build": "node build.mjs",
-    "build:readable": "node build.mjs --readable",
-    "build:dev": "node build.mjs --dev"
+    "build": "node build-jurassic.mjs",
+    "build:readable": "node build-jurassic.mjs --dev",
+    "build:dev": "node build-jurassic.mjs --dev",
+    "build:abyssal": "node build.mjs --abyssal",
+    "test": "node --test tests/simulation.test.mjs",
+    "start": "node serve.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.28.2"

@@ -11,7 +11,7 @@ import { transformSync } from 'esbuild';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const FILES = ['quality.js', 'math.js', 'shaders.js', 'world.js', 'main.js', 'audio.js']; // concatenation order matters
 const dev = process.argv.includes('--dev'), readable = dev || process.argv.includes('--readable');
-const out = dev ? 'dev.html' : 'index.html';
+const out = dev ? 'dev.html' : process.argv.includes('--abyssal') ? 'abyssal.html' : 'index.html';
 if (dev) FILES.push('dev.js');
 
 let js = FILES.map((f) => readFileSync(path.join(here, 'src', f), 'utf8')).join('\n');
