@@ -101,7 +101,7 @@ export function makeWorld() {
 
 export function makeCreatures() {
   const list = [];
-  const add = (species, x, z, scale, yaw) => list.push({ species, mesh: SPECIES[species].mesh, role: SPECIES[species].role, material: SPECIES[species].material, radius: SPECIES[species].radius, x, z, y: SPECIES[species].role === 'marine' ? -4 : ground(x, z), homeX: x, homeZ: z, scale, yaw, phase: list.length * 1.9, state: 'Wandering', speed: 0, timer: 2, cooldown: 0, targetX: x, targetZ: z });
+  const add = (species, x, z, scale, yaw) => list.push({ id: list.length, species, mesh: SPECIES[species].mesh, role: SPECIES[species].role, material: SPECIES[species].material, radius: SPECIES[species].radius, x, z, y: SPECIES[species].role === 'marine' ? -4 : ground(x, z), homeX: x, homeZ: z, scale, yaw, pitch: 0, roll: 0, phase: list.length * 1.9, gait: list.length * 1.9, stride: species === 3 ? 1.5 : species === 4 ? 1.25 : 1, stepHeight: species === 3 ? .24 : .18, feet: [0, 0, 0, 0], bodyRadius: (species === 3 ? 1.7 : species === 4 ? 1.4 : .8) * scale, state: 'Resting', speed: 0, timer: 2 + list.length % 4 * 3, decisions: 0, cooldown: 0, memory: 0, searchTime: 0, attackWindup: 0, headPose: 0, thirst: .25 + list.length % 3 * .06, drinkTime: 0, targetX: x, targetZ: z });
   add(0, 42, 16, 1, -1.1); add(0, 33, 4, .83, .8); add(0, 48, 7, .58, -.3);
   add(1, -27, -22, 1.05, 0.5);
   add(2, 132, 25, 1.3, 1.4); add(2, 141, 38, 0.9, 0.4);

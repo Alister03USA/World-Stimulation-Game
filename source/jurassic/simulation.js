@@ -41,39 +41,7 @@ export function movePlayer(game, input, dt, colliders) {
   return { swimming, moving: len > .05, sprinting: sprint };
 }
 
-const turnToward = (angle, target, step) => { const delta = Math.atan2(Math.sin(target - angle), Math.cos(target - angle)); return angle + clamp(delta, -step, step); };
-export function updateCreatures(game, creatures, dt, colliders = []) {
-  const p = game.player;
-  for (const c of creatures) {
-    c.timer -= dt; c.cooldown = Math.max(0, c.cooldown - dt);
-    const role = SPECIES[c.species].role, distance = Math.hypot(p.x - c.x, p.z - c.z), aquatic = role === 'marine', playerInWater = p.y < .9;
-    const danger = role === 'hunter' && !playerInWater && ground(p.x, p.z) > 0 && distance < 25;
-    const marineThreat = aquatic && playerInWater && distance < 13;
-    const fleeing = role === 'browser' && distance < 7;
-    let targetX, targetZ, speed;
-    if (danger || marineThreat) { c.state = distance < 5 ? 'Attacking' : 'Approaching'; targetX = p.x; targetZ = p.z; speed = aquatic ? 2.1 : 3.65; }
-    else if (fleeing) { c.state = 'Moving away'; targetX = c.x + (c.x - p.x) * 3; targetZ = c.z + (c.z - p.z) * 3; speed = 2; }
-    else {
-      if (c.timer <= 0) {
-        const a = game.clock * .11 + c.phase * 3.1, r = aquatic ? 12 : role === 'giant' ? 7 : 9;
-        c.targetX = c.homeX + Math.sin(a) * r; c.targetZ = c.homeZ + Math.cos(a * .73) * r; c.timer = 7 + Math.sin(a) * 2;
-      }
-      targetX = c.targetX; targetZ = c.targetZ;
-      speed = aquatic ? 1.05 : c.timer > 4 ? role === 'giant' ? .43 : .65 : 0; c.state = speed ? 'Wandering' : role === 'browser' || role === 'giant' ? 'Browsing' : 'Resting';
-    }
-    if (Math.hypot(targetX - c.x, targetZ - c.z) < 1) speed = 0;
-    const desired = Math.atan2(targetX - c.x, -(targetZ - c.z)); c.yaw = turnToward(c.yaw, desired, dt * (aquatic ? .6 : 1.1));
-    const nx = c.x + Math.sin(c.yaw) * speed * dt, nz = c.z - Math.cos(c.yaw) * speed * dt, h = ground(nx, nz);
-    const blocked = !aquatic && colliders.some(o => Math.hypot(nx - o.x, nz - o.z) < o.radius + c.scale * (role === 'giant' ? 1.8 : .9));
-    if ((aquatic ? h < -4 : h > 2 && Math.abs(h - ground(c.x, c.z)) < .5) && !blocked) { c.x = nx; c.z = nz; c.speed = speed; }
-    else { c.timer = 0; c.yaw += dt; c.speed = 0; }
-    if (aquatic) c.y = Math.max(h + 2, -4.5 + Math.sin(game.clock * .2 + c.phase) * 1.2);
-    else c.y = ground(c.x, c.z);
-    if ((danger || marineThreat) && distance < (aquatic ? 3.7 : 3.4) && Math.abs(p.y - c.y) < 5 && c.cooldown <= 0) {
-      game.health = Math.max(0, game.health - (aquatic ? 9 : 13)); c.cooldown = 2.6; game.damage = 1; game.attackAt = game.elapsed;
-    }
-  }
-}
+export { updateWildlife as updateCreatures } from './wildlife.js';
 
 export function updateSurvival(game, dt) {
   game.elapsed += dt; game.clock += dt; game.damage = Math.max(0, game.damage - dt * 1.8);

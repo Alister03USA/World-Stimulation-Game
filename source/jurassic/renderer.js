@@ -2,8 +2,8 @@ import { sceneShader, skyShader, waterShader } from './shaders.js';
 import { animalTextures } from './assets.js';
 
 export function writeTransform(a, offset, o) {
-  const s = o.scale ?? 1, c = Math.cos(o.yaw || 0) * s, n = Math.sin(o.yaw || 0) * s;
-  a.set([c, 0, -n, 0, 0, s, 0, 0, n, 0, c, 0, o.x || 0, o.y || 0, o.z || 0, 1, 1, 1, 1, 1, o.phase || 0, o.speed || 0, o.species === undefined ? 0 : o.species + 1, o.material || 0], offset);
+  const s = o.scale ?? 1, c = Math.cos(o.yaw || 0), n = Math.sin(o.yaw || 0), cp = Math.cos(o.pitch || 0), sp = Math.sin(o.pitch || 0), cr = Math.cos(o.roll || 0), sr = Math.sin(o.roll || 0);
+  a.set([c * cr * s, sr * s, -n * cr * s, 0, (-c * sr * cp + n * sp) * s, cr * cp * s, (n * sr * cp + c * sp) * s, 0, (c * sr * sp + n * cp) * s, -cr * sp * s, (-n * sr * sp + c * cp) * s, 0, o.x || 0, o.y || 0, o.z || 0, 1, 1, 1, 1, 1, o.phase || 0, o.speed || 0, o.species === undefined ? 0 : o.species + 1, o.material || 0, o.gait || 0, o.headPose || 0, o.stride || 1, o.stepHeight || .18, ...(o.feet || [0, 0, 0, 0])], offset);
 }
 
 export function writeLightMatrix(out, offset, x, y, z, light) {
@@ -61,7 +61,7 @@ export async function makeRenderer(canvas, world, creatures, onError) {
     if (errors.length) throw new Error(errors.map(e => `Shader line ${e.lineNum}: ${e.message}`).join('\n'));
   }
   const vertexLayout = { arrayStride: 64, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }, { shaderLocation: 1, offset: 12, format: 'float32x3' }, { shaderLocation: 2, offset: 24, format: 'float32x3' }, { shaderLocation: 3, offset: 36, format: 'float32' }, { shaderLocation: 10, offset: 40, format: 'float32x2' }, { shaderLocation: 11, offset: 48, format: 'float32x3' }, { shaderLocation: 12, offset: 60, format: 'float32' }] };
-  const instanceLayout = { arrayStride: 96, stepMode: 'instance', attributes: Array.from({ length: 6 }, (_, i) => ({ shaderLocation: i + 4, offset: i * 16, format: 'float32x4' })) };
+  const instanceLayout = { arrayStride: 128, stepMode: 'instance', attributes: [...Array.from({ length: 6 }, (_, i) => ({ shaderLocation: i + 4, offset: i * 16, format: 'float32x4' })), { shaderLocation: 13, offset: 96, format: 'float32x4' }, { shaderLocation: 14, offset: 112, format: 'float32x4' }] };
   const pipe = (module, buffers, water = false, sky = false) => device.createRenderPipelineAsync({
     layout: pipelineLayout, vertex: { module, entryPoint: 'vs', buffers }, fragment: { module, entryPoint: 'fs', targets: [{ format, blend: water ? { color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha' }, alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' } } : undefined }] },
     primitive: { topology: water ? 'triangle-strip' : 'triangle-list', cullMode: 'none' },
@@ -79,7 +79,7 @@ export async function makeRenderer(canvas, world, creatures, onError) {
     const objects = name === 'terrain' ? [{ x: 0, y: 0, z: 0 }] : world.objects.filter(o => o.mesh === name);
     const animals = creatures.filter(o => o.mesh === name), all = [...objects, ...animals];
     if (!all.length) continue;
-    const data = new Float32Array(all.length * 24); all.forEach((o, i) => writeTransform(data, i * 24, o));
+    const data = new Float32Array(all.length * 32); all.forEach((o, i) => writeTransform(data, i * 32, o));
     groups.push({ name, mesh: meshes.get(name), all, data, buffer: upload(data, GPUBufferUsage.VERTEX), shadowData: new Float32Array(data.length), shadowBuffer: upload(data, GPUBufferUsage.VERTEX), count: all.length, shadowCount: all.length });
   }
   let depth, multisample, width = 0, height = 0, quality = 1, frames = 0, time = 0, lastResize = 0;
@@ -114,17 +114,17 @@ export async function makeRenderer(canvas, world, creatures, onError) {
       const farLimit = ['tree', 'ginkgo'].includes(group.name) ? 230 : ['fern', 'horsetail'].includes(group.name) ? 65 : ['weed', 'cycad'].includes(group.name) ? 85 : 200;
       for (const o of group.all) {
         const dx = o.x - x, dy = o.y - y, dz = o.z - z, radius = (o.scale || 1) * group.mesh.radius;
-        if (Math.hypot(dx, dz) < 135 + radius) writeTransform(group.shadowData, shadowCount++ * 24, o);
+        if (Math.hypot(dx, dz) < 135 + radius) writeTransform(group.shadowData, shadowCount++ * 32, o);
         const forward = dx * fx + dy * fy + dz * fz;
         if (Math.hypot(dx, dz) > farLimit + radius || forward < -radius) continue;
         if (Math.abs(dx * rx + dz * rz) > Math.max(0, forward) * tan * aspect + radius * 2) continue;
         if (Math.abs(dx * ux + dy * uy + dz * uz) > Math.max(0, forward) * tan + radius * 2) continue;
-        writeTransform(group.data, visible++ * 24, o);
+        writeTransform(group.data, visible++ * 32, o);
       }
       group.count = visible;
       group.shadowCount = shadowCount;
-      if (visible) device.queue.writeBuffer(group.buffer, 0, group.data, 0, visible * 24);
-      if (shadowCount) device.queue.writeBuffer(group.shadowBuffer, 0, group.shadowData, 0, shadowCount * 24);
+      if (visible) device.queue.writeBuffer(group.buffer, 0, group.data, 0, visible * 32);
+      if (shadowCount) device.queue.writeBuffer(group.shadowBuffer, 0, group.shadowData, 0, shadowCount * 32);
     }
     const encoder = device.createCommandEncoder();
     const shadowPass = encoder.beginRenderPass({ colorAttachments: [], depthStencilAttachment: { view: shadowTexture.createView(), depthClearValue: 1, depthLoadOp: 'clear', depthStoreOp: 'store' } });

@@ -9,6 +9,7 @@
     "build:dev": "node build-jurassic.mjs --dev",
     "build:abyssal": "node build.mjs --abyssal",
     "assets:sculpt": "node tools/bake-sculpts.mjs",
+    "assets:portraits": "node tools/render-portraits.mjs",
     "assets:import": "node tools/prepare-assets.mjs",
     "test": "node --test tests/simulation.test.mjs",
     "start": "node serve.mjs"

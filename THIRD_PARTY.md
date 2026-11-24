@@ -16,6 +16,8 @@ Optimized derivatives and textures are included in `source/assets/`, and embedde
 
 The other four animal meshes are authored procedural reconstructions in `source/jurassic/sculpt.js`, baked into `source/assets/` by `source/tools/bake-sculpts.mjs`. Plant geometry is authored in `source/jurassic/plants.js`. Those additions share the project MIT license and reuse the original surface-nets and mesh helpers. No texture or model has been copied from a commercial Jurassic franchise.
 
+Journal images in `source/assets/portraits/` are offline renders of those same game models using `source/tools/render-portraits.mjs`. Stegosaurus and Brachiosaurus portraits derive from the credited CC0 assets; the other four derive from the authored MIT meshes. They introduce no additional external artwork or downloads.
+
 ## Development dependencies
 
 esbuild (MIT) bundles the game; meshoptimizer (MIT) simplifies imported geometry; sharp (Apache-2.0, with its own dependency notices) resizes source textures. They are development tools, not runtime engine dependencies. Their full dependency licenses remain in installed npm packages. There are no runtime engine, model, texture, font, or audio downloads.

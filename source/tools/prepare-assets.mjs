@@ -30,10 +30,10 @@ for (const [name, target] of [['stegosaurus', 24000], ['brachiosaurus', 20000]])
   for (let i = 0; i < positions.length / 3; i++) attributes.set([...normals.subarray(i * 3, i * 3 + 3), ...uv.subarray(i * 2, i * 2 + 2)], i * 5);
   const [simple, error] = MeshoptSimplifier.simplifyWithAttributes(indices, positions, 3, attributes, 5, [.3, .3, .3, 1, 1], null, target * 3, .008, ['Prune']);
   const min = gltf.accessors[primitive.attributes.POSITION].min, max = gltf.accessors[primitive.attributes.POSITION].max, height = max[1] - min[1], length = max[2] - min[2], width = max[0] - min[0];
-  // The source sauropod's raised head identifies its forward direction. The stegosaur's narrow tail is +Z.
+  // Both source animals face +Z; the game moves animals toward local -Z.
   let headZ = 0, headN = 0;
   for (let i = 0; i < positions.length; i += 3) if (positions[i + 1] > height * .88) { headZ += positions[i + 2]; headN++; }
-  const flip = name === 'brachiosaurus' && headZ / headN > 0;
+  const flip = name === 'stegosaurus' || headZ / headN > 0;
   const feet = [];
   for (const side of [-1, 1]) for (const end of [-1, 1]) {
     let x = 0, z = 0, n = 0;
@@ -52,10 +52,11 @@ for (const [name, target] of [['stegosaurus', 24000], ['brachiosaurus', 20000]])
       let joint = 0, weight = 0, pivot = [0, 0, 0], nearest = Infinity;
       for (let i = 0; i < feet.length; i++) {
         const foot = feet[i], distance = Math.hypot((x - foot[0]) * 1.4, (z - foot[2]) * .75);
-        if (distance < nearest && y < foot[1] && Math.abs(x) > width * .12) { nearest = distance; pivot = foot; joint = 10 + i; weight = 1 - smooth(foot[1] * .65, foot[1], y); }
+        if (distance < nearest && distance < width * .4 + .25 && y < foot[1] && Math.abs(x) > width * .12) { nearest = distance; pivot = foot; joint = 10 + i; weight = 1 - smooth(foot[1] * .65, foot[1], y); }
       }
       if (!weight && z > length * .2 && y < height * .7) { joint = 14; pivot = [0, height * .40, length * .18]; weight = smooth(length * .20, length * .38, z); }
       if (!weight && name === 'brachiosaurus' && y > height * .45) { joint = 15; pivot = [0, height * .4, -length * .20]; weight = smooth(height * .45, height * .66, y) * .7; }
+      if (!weight && name === 'stegosaurus' && z < -length * .22 && y < height * .62) { joint = 15; pivot = [0, height * .38, -length * .18]; weight = smooth(length * .22, length * .38, -z); }
       verts.push(x, y, z, normals[old * 3] * sign, normals[old * 3 + 1], normals[old * 3 + 2] * sign, 1, 1, 1, joint, uv[old * 2], uv[old * 2 + 1], ...pivot, weight);
     }
     packedIndices[k] = next;

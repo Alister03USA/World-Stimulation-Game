@@ -59,6 +59,14 @@ The five dinosaurs are Late Jurassic animals; Cryptoclidus is a Jurassic marine 
 
 Older saves retain their first three observations; discovering the added animals is required to complete the expanded six-animal objective.
 
+## Wildlife and field portraits
+
+Every animal journal card includes a full-body portrait rendered offline from its actual game mesh and textures. All six images are embedded, visible before observation, and keep the existing discovery status. Regenerate them with `npm run assets:portraits` after changing animal assets.
+
+Animals accelerate and brake gradually, slow down during turns, and steer around nearby obstacles. Walking phase follows distance traveled, with longer stance periods, lifted swing steps, slope-aligned bodies, and bounded lower-limb contact corrections. Browsing and drinking lower the head; marine animals bank during turns and paddle with their travel rhythm. These remain procedural mesh deformations rather than complete skeletal rigs or inverse kinematics.
+
+Herbivores forage, browse, rest, follow separated herd members, make room for the player, flee nearby predators, and seek the freshwater spring when thirsty. Hunters use a forward field of view, close-range awareness and approximate terrain/trunk occlusion. They watch, stalk, chase, track the last seen position, search, then resume patrols. Bites have a short windup and cooldown; reaching water interrupts land-predator pursuit. Warning text shows the encounter state. These are gameplay approximations, not claims about fossil behavior.
+
 ## Source
 
 | File | Purpose |
@@ -70,6 +78,8 @@ Older saves retain their first three observations; discovering the added animals
 | `source/assets/` | Optimized models, texture maps, source hashes and provenance manifest |
 | `source/tools/` | Repeatable model conversion and sculpt baking tools |
 | `source/jurassic/simulation.js` | Walking/swimming physics, creature behavior, survival, interaction, save validation |
+| `source/jurassic/wildlife.js` | Perception, herd behavior, steering, acceleration, gait and ground contacts |
+| `source/jurassic/portraits.js` | The six embedded field-journal images |
 | `source/jurassic/renderer.js` | WebGPU instancing, visibility/distance culling, resize and quality scaling |
 | `source/jurassic/shaders.js` | Land/water lighting, sky, fog, caustics, creature animation |
 | `source/jurassic/main.js` | Game loop, inputs, menus, journal, map, objectives |
@@ -86,6 +96,7 @@ npm run build:dev     # readable dev.html with development-only viewpoints
 npm run build:abyssal # rebuild the original demo as abyssal.html
 npm run assets:sculpt # rebake the four authored animals after editing sculpt.js
 npm run assets:import -- /path/to/glbs # reconvert the two original licensed source GLBs
+npm run assets:portraits # rerender all six journal portraits from the baked meshes
 ```
 
 In `dev.html`, press the backtick key to show the development viewpoints. They exist only in that build. These fixtures help inspect the coast, dinosaur clearing, spring, predator, underwater habitat, and surface without a long walk. They reset some stats and must not be used to assess survival balance.

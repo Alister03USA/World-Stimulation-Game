@@ -3,6 +3,7 @@ import { makeWorld, makeCreatures, ground, SPECIES, FLORA, SPRING, CACHE, DAY_SE
 import { newGame, movePlayer, updateCreatures, updateSurvival, interact, eat, inspect, saveGame, loadGame, SAVE_KEY } from './simulation.js';
 import { makeRenderer } from './renderer.js';
 import { makeAudio } from './audio.js';
+import { portraits } from './portraits.js';
 
 const $ = id => document.getElementById(id), canvas = $('world'), audio = makeAudio();
 let game = loadGame() || newGame(), creatures = makeCreatures(), world, renderer, paused = true, ready = false, fatal = false, last = 0, hudTime = 0, saveTime = 0, renderTime = 0, seen = null, toastTime = 0, frames = 0, fps = 60;
@@ -34,9 +35,9 @@ function setPause(value) {
 }
 function clearInput() { for (const k of Object.keys(input)) input[k] = 0; touchForward = touchStrafe = 0; movePointer = lookPointer = null; moveOrigin = lastLook = null; $('stick-knob').style.transform = ''; }
 function restart() {
-  game = newGame(); creatures.splice(0, creatures.length, ...makeCreatures());
-  // Keep the renderer's instance object references while resetting creature state.
-  if (renderer) renderer.resetCreatures(creatures);
+  game = newGame();
+  // Preserve the objects held by the renderer's instance groups when starting again.
+  makeCreatures().forEach((fresh, i) => Object.assign(creatures[i], fresh));
   try { localStorage.removeItem(SAVE_KEY); } catch {}
   $('outcome').hidden = true; $('guide').hidden = true; $('enter').disabled = false; updateJournal(); drawMap(); updateHUD(); setPause(false); toast('A new expedition begins. Your first supplies are nearby.');
 }
@@ -107,11 +108,12 @@ function updateJournal() {
   $('journal-entries').replaceChildren(...SPECIES.map((s, i) => {
     const article = document.createElement('article'), discovered = game.discovered.includes(i);
     article.className = discovered ? 'record observed' : 'record';
+    const image = document.createElement('img'); image.src = portraits[i]; image.alt = `${s.name} — full-body view of the game model`; image.className = 'animal-portrait'; image.width = 640; image.height = 400; image.loading = 'lazy'; image.decoding = 'async';
     const label = document.createElement('span'); label.className = 'eyebrow'; label.textContent = discovered ? 'Observed' : 'Not yet observed';
     const heading = document.createElement('h3'); heading.textContent = s.name;
     const type = document.createElement('p'); type.className = 'record-type'; type.textContent = s.kind;
     const text = document.createElement('p'); text.textContent = s.detail;
-    article.append(label, heading, type, text); return article;
+    article.append(image, label, heading, type, text); return article;
   }));
   $('flora-entries').replaceChildren(...FLORA.map(plant => {
     const article = document.createElement('article'), title = document.createElement('h3'), text = document.createElement('p');
@@ -160,9 +162,9 @@ function updateHUD() {
   $('interaction-text').textContent = nearSpring ? 'Drink from the freshwater spring' : 'Search the shoreline supply cache';
   seen = inspect(game, creatures); $('animal').hidden = !seen;
   if (seen) { const s = SPECIES[seen.species]; $('animal-name').textContent = s.name; $('animal-state').textContent = `${s.kind} · ${seen.state.toLowerCase()} · F to observe`; }
-  const threat = creatures.find(c => (c.state === 'Approaching' || c.state === 'Attacking') && Math.hypot(c.x - game.player.x, c.z - game.player.z) < 26);
+  const threat = creatures.find(c => ['Watching', 'Stalking', 'Chasing', 'Tracking', 'Attacking', 'Recovering'].includes(c.state) && Math.hypot(c.x - game.player.x, c.z - game.player.z) < 34);
   $('warning').hidden = !threat;
-  if (threat) $('warning').textContent = SPECIES[threat.species].role === 'hunter' ? `${SPECIES[threat.species].name.toUpperCase()} NEARBY · Keep your distance or reach the water` : 'MARINE REPTILE NEARBY · Give it space';
+  if (threat) $('warning').textContent = `${SPECIES[threat.species].name.toUpperCase()} · ${threat.state.toUpperCase()} · ${SPECIES[threat.species].role === 'hunter' ? 'Keep your distance or reach the water' : 'Give it space'}`;
   $('fps').textContent = `${Math.round(fps)} fps`; drawMap();
 }
 

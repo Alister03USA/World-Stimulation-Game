@@ -55,26 +55,27 @@ export const sceneShader = common + /*wgsl*/`
 struct Input {
   @location(0) p: vec3f, @location(1) n: vec3f, @location(2) color: vec3f, @location(3) joint: f32,
   @location(4) a: vec4f, @location(5) b: vec4f, @location(6) c: vec4f, @location(7) d: vec4f,
-  @location(8) tint: vec4f, @location(9) params: vec4f, @location(10) uv: vec2f, @location(11) pivot: vec3f, @location(12) weight: f32
+  @location(8) tint: vec4f, @location(9) params: vec4f, @location(10) uv: vec2f, @location(11) pivot: vec3f, @location(12) weight: f32,
+  @location(13) motion: vec4f, @location(14) feet: vec4f
 };
 struct Deformed { p: vec3f, n: vec3f };
 fn rotateX(p: vec3f, a: f32) -> vec3f { return vec3f(p.x, p.y * cos(a) - p.z * sin(a), p.y * sin(a) + p.z * cos(a)); }
 fn rotateY(p: vec3f, a: f32) -> vec3f { return vec3f(p.x * cos(a) + p.z * sin(a), p.y, -p.x * sin(a) + p.z * cos(a)); }
 fn deform(i: Input) -> Deformed {
-  var p = i.p; var normal = i.n; let moving = min(i.params.y, 1.8);
-  let phase = g.camera.w * max(i.params.y * 2.5, .35) + i.params.x;
+  var p = i.p; var normal = i.n; let moving = min(i.params.y / .45, 1.);
   if (i.joint >= 10. && i.joint <= 13.) {
-    let leg = i32(i.joint) - 10; let offset = select(0., PI, leg == 1 || leg == 2);
-    let angle = sin(phase + offset) * .23 * moving; let relative = p - i.pivot;
-    p = mix(p, i.pivot + rotateX(relative, angle), i.weight);
-    p.y += max(cos(phase + offset), 0.) * .09 * moving * i.weight;
-    normal = normalize(mix(normal, rotateX(normal, angle), i.weight));
+    let leg = i32(i.joint) - 10; let biped = i.params.z == 2. || i.params.z == 6.;
+    let offsets = select(vec4f(0., .5, .75, .25), vec4f(0., 0., .5, .5), biped);
+    let phase = fract(i.motion.x / (2. * PI) + offsets[leg]); let swing = clamp((phase - .64) / .36, 0., 1.);
+    let slide = select(.5 - swing, phase / .64 - .5, phase < .64) * i.motion.z * moving;
+    p.z += slide * i.weight; p.y += (sin(swing * PI) * i.motion.w * moving + i.feet[leg]) * i.weight;
   }
   if (i.joint == 14. || i.joint == 15.) {
     let angle = sin(g.camera.w * select(.56, .25, i.joint == 15.) + i.params.x + p.z * .12) * select(.065, .025, i.joint == 15.);
     p = mix(p, i.pivot + rotateY(p - i.pivot, angle), i.weight); normal = normalize(mix(normal, rotateY(normal, angle), i.weight));
+    if (i.joint == 15.) { let dip = i.motion.y * select(.32, .12, i.params.z == 4.); p = mix(p, i.pivot + rotateX(p - i.pivot, -dip), i.weight); normal = normalize(mix(normal, rotateX(normal, -dip), i.weight)); }
   }
-  if (i.joint == 6. || i.joint == 7.) { let a = sin(g.camera.w * 1.25 + i.params.x + select(0., .3, i.joint == 7.)); p.y += a * abs(p.x) * .23; }
+  if (i.joint == 6. || i.joint == 7.) { let a = sin(i.motion.x + select(0., .3, i.joint == 7.)); p.y += a * abs(p.x) * .23; }
   if (i.joint == 30.) {
     let wind = sin(g.camera.w * .75 + i.d.x * .055 + i.d.z * .08) + .35 * sin(g.camera.w * 1.7 + p.x * .4);
     p.x += wind * min(p.y, 25.) * .012; p.z += sin(g.camera.w * .6 + i.d.x * .04) * p.y * .006;
