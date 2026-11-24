@@ -1,45 +1,12 @@
-import { ground, LIMIT, SPAWN, SPRING, CACHE, DAY_SECONDS, SPECIES } from './world.js';
+import { ground, LIMIT, SPAWN, WATER_SOURCES, CACHES, DAY_SECONDS, SPECIES } from './world.js';
 import { clamp } from '../src/math.js';
 
 export const SAVE_KEY = typeof __DEV__ !== 'undefined' && __DEV__ ? 'world-stimulation-jurassic-dev-v1' : 'world-stimulation-jurassic-v1';
 export function newGame() {
-  return { player: { x: SPAWN.x, y: ground(SPAWN.x, SPAWN.z) + 1.7, z: SPAWN.z, yaw: SPAWN.yaw, pitch: -.06, vy: 0, grounded: true }, health: 100, stamina: 100, hunger: 88, thirst: 82, oxygen: 100, rations: 2, elapsed: 0, clock: 80, cacheAt: -300, discovered: [], drank: false, supplied: false, won: false, dead: false, damage: 0, attackAt: -10 };
+  return { player: { x: SPAWN.x, y: ground(SPAWN.x, SPAWN.z) + 1.7, z: SPAWN.z, yaw: SPAWN.yaw, pitch: -.06, vy: 0, grounded: true, vx: 0, vz: 0, coyote: .1, jumpBuffer: 0, jumpHeld: false, swimming: false }, health: 100, stamina: 100, hunger: 88, thirst: 82, oxygen: 100, rations: 2, elapsed: 0, clock: 80, cacheAt: -300, discovered: [], drank: false, supplied: false, won: false, dead: false, damage: 0, attackAt: -10 };
 }
 
-export function movePlayer(game, input, dt, colliders) {
-  const p = game.player, floor = ground(p.x, p.z), swimming = floor < -.9 && p.y < 1.25;
-  let forward = (input.forward || 0) - (input.backward || 0), strafe = (input.right || 0) - (input.left || 0), len = Math.hypot(forward, strafe);
-  if (len > 1) { forward /= len; strafe /= len; }
-  const sprint = input.sprint && game.stamina > 3 && len > 0;
-  const speed = swimming ? sprint ? 4.8 : 2.8 : sprint ? 6.2 : 3.2;
-  const sy = Math.sin(p.yaw), cy = Math.cos(p.yaw), pitch = swimming ? Math.cos(p.pitch) : 1;
-  const dx = (sy * forward * pitch + cy * strafe) * speed * dt, dz = (-cy * forward * pitch + sy * strafe) * speed * dt;
-  const steps = Math.max(1, Math.ceil(Math.hypot(dx, dz) / .3));
-  for (let i = 0; i < steps; i++) {
-    const oldFloor = ground(p.x, p.z), nx = p.x + dx / steps, nz = p.z + dz / steps;
-    if (ground(nx, p.z) < Math.max(oldFloor + .42, p.y - 1.1)) p.x = nx;
-    if (ground(p.x, nz) < Math.max(oldFloor + .42, p.y - 1.1)) p.z = nz;
-    for (const c of colliders) {
-      const x = p.x - c.x, z = p.z - c.z, d = Math.hypot(x, z), r = c.radius + .35;
-      if (d < r && d > .001 && Math.abs(p.y - ground(c.x, c.z)) < 28) { p.x = c.x + x / d * r; p.z = c.z + z / d * r; }
-    }
-  }
-  const rad = Math.hypot(p.x, p.z); if (rad > LIMIT) { p.x *= LIMIT / rad; p.z *= LIMIT / rad; }
-  const bottom = ground(p.x, p.z) + 1.7;
-  if (swimming) {
-    const vertical = (input.jump ? 1 : 0) - (input.dive ? 1 : 0), target = vertical * 3 + (vertical ? 0 : .35) + Math.sin(p.pitch) * forward * speed * .45;
-    p.vy += (target - p.vy) * Math.min(1, dt * 4); p.y += p.vy * dt;
-    if (p.y > .65 && !input.jump) { p.y = .65; p.vy = Math.min(0, p.vy); }
-    if (p.y < bottom) { p.y = bottom; p.vy = Math.max(0, p.vy); }
-    p.grounded = false;
-  } else {
-    if (input.jump && p.grounded) { p.vy = 6.8; p.grounded = false; }
-    p.vy -= 19 * dt; p.y += p.vy * dt;
-    if (p.y <= bottom) { p.y = bottom; p.vy = 0; p.grounded = true; }
-  }
-  game.stamina = clamp(game.stamina + (sprint ? -8 : 10) * dt, 0, 100);
-  return { swimming, moving: len > .05, sprinting: sprint };
-}
+export { movePlayer } from './movement.js';
 
 export { updateWildlife as updateCreatures } from './wildlife.js';
 
@@ -55,12 +22,16 @@ export function updateSurvival(game, dt) {
 
 export function interact(game) {
   const p = game.player;
-  if (Math.hypot(p.x - SPRING.x, p.z - SPRING.z) < 6 && Math.abs(p.y - ground(SPRING.x, SPRING.z)) < 5) {
-    game.thirst = 100; game.drank = true; return 'Fresh water collected. Thirst restored.';
+  const source = WATER_SOURCES.find(s => Math.hypot(p.x - s.x, p.z - s.z) < 6 && Math.abs(p.y - ground(s.x, s.z)) < 5);
+  if (source) {
+    game.thirst = 100; game.drank = true; return `${source.name}: fresh water collected. Thirst restored.`;
   }
-  if (Math.hypot(p.x - CACHE.x, p.z - CACHE.z) < 4 && Math.abs(p.y - ground(CACHE.x, CACHE.z)) < 4) {
-    if (game.elapsed - game.cacheAt < 300) return 'This supply cache is empty. More provisions wash ashore in five minutes.';
-    game.rations += 2; game.cacheAt = game.elapsed; game.supplied = true; return 'Collected two rations from the shoreline cache.';
+  const cache = CACHES.find(s => Math.hypot(p.x - s.x, p.z - s.z) < 4 && Math.abs(p.y - ground(s.x, s.z)) < 4);
+  if (cache) {
+    game.cacheTimes ||= {}; const last = cache.id === 'coast' ? game.cacheAt : game.cacheTimes[cache.id] ?? -300;
+    if (game.elapsed - last < 300) return 'This supply cache is empty. More provisions become available in five minutes.';
+    game.rations += 2; if (cache.id === 'coast') game.cacheAt = game.elapsed; else game.cacheTimes[cache.id] = game.elapsed;
+    game.supplied = true; return `${cache.name}: collected two rations.`;
   }
   return 'Get closer to the freshwater spring or the shoreline supply cache.';
 }
@@ -96,10 +67,11 @@ export function loadGame(storage) {
     if (!data || data.version !== 1 || !data.player || data.dead || data.won) return null;
     const game = newGame(), numeric = ['health', 'stamina', 'hunger', 'thirst', 'oxygen', 'rations', 'elapsed', 'clock', 'cacheAt'];
     if (numeric.some(k => !Number.isFinite(data[k])) || ['x', 'y', 'z', 'yaw', 'pitch'].some(k => !Number.isFinite(data.player[k]))) return null;
-    if (Math.hypot(data.player.x, data.player.z) > LIMIT + 1 || data.player.y < -40 || data.player.y > 90 || data.elapsed < 0 || data.rations < 0 || data.rations > 1000) return null;
+    if (Math.hypot(data.player.x, data.player.z) > LIMIT + 1 || data.player.y < -70 || data.player.y > 180 || data.elapsed < 0 || data.rations < 0 || data.rations > 1000) return null;
     Object.assign(game, data); game.discovered = [...new Set((Array.isArray(data.discovered) ? data.discovered : []).filter(i => Number.isInteger(i) && i >= 0 && i < SPECIES.length))];
+    game.cacheTimes = Object.fromEntries(CACHES.filter(c => Number.isFinite(data.cacheTimes?.[c.id]) && data.cacheTimes[c.id] >= -300 && data.cacheTimes[c.id] <= game.elapsed).map(c => [c.id, data.cacheTimes[c.id]]));
     for (const k of ['health', 'stamina', 'hunger', 'thirst', 'oxygen']) game[k] = clamp(game[k], 0, 100);
-    game.player.vy = 0; game.player.pitch = clamp(game.player.pitch, -1.45, 1.45); game.damage = 0;
+    game.player.vy = game.player.vx = game.player.vz = 0; game.player.jumpHeld = false; game.player.jumpBuffer = 0; game.player.coyote = 0; game.player.swimming = ground(game.player.x, game.player.z) < -.95 && game.player.y < 1.15; game.player.pitch = clamp(game.player.pitch, -1.45, 1.45); game.damage = 0;
     game.player.y = Math.max(ground(game.player.x, game.player.z) + 1.7, game.player.y);
     return game;
   } catch { return null; }

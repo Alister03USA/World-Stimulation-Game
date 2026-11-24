@@ -1,6 +1,6 @@
 # World Stimulation Game — Jurassic Coast
 
-A first-person survival prototype set on a fictional Jurassic coastline. Walk among Stegosaurus, Brachiosaurus, and Diplodocus, avoid Allosaurus and Ceratosaurus, and dive with Cryptoclidus. Find fresh water and supplies, record all six animals, and survive one full day.
+A first-person survival prototype in a fictional Jurassic world about 1.2 kilometres across. Explore the original coast, a river valley, fern wetlands, conifer uplands and an offshore lagoon. Walk among Stegosaurus, Brachiosaurus and Diplodocus, avoid Allosaurus and Ceratosaurus, and dive with Cryptoclidus. Find fresh water and supplies, record all six species, and survive one full day.
 
 Built on [Abyssal Garden](https://github.com/Noniv/abyssal-garden) by Maksymilian Dendura. The original MIT license and attribution are preserved. The original underwater experience is still available in [abyssal.html](abyssal.html), with its [original README](README-abyssal.md).
 
@@ -20,9 +20,9 @@ Open **http://127.0.0.1:4173**. Choose **Begin expedition**. If pointer lock is 
 ## First expedition
 
 - Search the gold supply marker on the map. It is close to the starting position.
-- Follow the blue marker to the freshwater spring and press **E** to drink. Sea water does not restore thirst.
+- Follow blue markers to freshwater springs and press **E** to drink. Four springs support longer expeditions; open the world map with **M**. Sea water and uncollected river water do not restore thirst.
 - Face each animal and press **F** to record it in the journal. Dive to observe marine life.
-- Use **R** to eat a ration. The supply cache replenishes two rations every five in-game minutes.
+- Use **R** to eat a ration. Each of the four gold provision caches replenishes two rations every five in-game minutes, with its own saved cooldown.
 - Keep your distance from Allosaurus and Ceratosaurus on land and Cryptoclidus in water. Sprint to escape; land predators will not pursue you into the sea.
 - Survive a full day, lasting **12 minutes of simulation time**, with all six animals observed and water and supplies collected.
 
@@ -41,7 +41,8 @@ Health recovers slowly when you are fed, hydrated, and out of danger. Sprinting 
 | Eat a ration | R |
 | Observe an animal | F while facing it within 65 metres |
 | Field journal | J |
-| Toggle map | M |
+| Open / close world map | M |
+| Switch small map between nearby and overview | N |
 | Pause / resume | Esc |
 | Mute | V |
 
@@ -50,6 +51,8 @@ On a touchscreen, use the left virtual stick to move, drag the world to look, an
 ## Saves
 
 Progress saves locally every ten simulation seconds and when pausing or leaving. Reload and choose **Resume expedition** to continue. Position, survival stats, rations, time, and observations persist. Creature positions reset on reload. Saves stay on the current browser and origin; there is no account or cloud sync. If storage is blocked, the game still runs but cannot retain progress. Starting a fresh expedition replaces the save. Development builds use a separate save slot.
+
+Earlier save data remains compatible. The original starting coast retains its terrain heights, and loaded players are raised to the ground if an extended part of the landscape is now higher. Movement velocity resets on loading. Higher upland positions and provision cooldowns at the added caches also persist.
 
 ## Scope and accuracy
 
@@ -65,13 +68,32 @@ Every animal journal card includes a full-body portrait rendered offline from it
 
 Animals accelerate and brake gradually, slow down during turns, and steer around nearby obstacles. Walking phase follows distance traveled, with longer stance periods, lifted swing steps, slope-aligned bodies, and bounded lower-limb contact corrections. Browsing and drinking lower the head; marine animals bank during turns and paddle with their travel rhythm. These remain procedural mesh deformations rather than complete skeletal rigs or inverse kinematics.
 
+The movement pass adds brief stance-foot anchors that compensate for small turns, smoothed gait strength during braking, and short escape targets when an animal stalls. Herd membership is regional, so distant animals do not try to follow a leader across the entire map. Rock and trunk collisions use vertical bounds, including submerged lagoon pinnacles.
+
+Player movement now accelerates and stops smoothly, slows uphill, slides along obstacles, and allows a short jump grace period at ledges. Swimming uses separate enter/exit thresholds to reduce shoreline switching. Holding jump does not repeatedly trigger land jumps; release and press again.
+
 Herbivores forage, browse, rest, follow separated herd members, make room for the player, flee nearby predators, and seek the freshwater spring when thirsty. Hunters use a forward field of view, close-range awareness and approximate terrain/trunk occlusion. They watch, stalk, chase, track the last seen position, search, then resume patrols. Bites have a short windup and cooldown; reaching water interrupts land-predator pursuit. Warning text shows the encounter state. These are gameplay approximations, not claims about fossil behavior.
+
+## Beyond the coast
+
+The world contains 33 animals across the six species, with regional herds and marine groups. Press **M** or click **Map** to pause and view all springs, provisions and landmarks. The small map follows the player; **N** switches it to the full overview. The journal describes the four landmarks:
+
+- **A — River Gate:** a natural stone arch beside the western river valley and a shallow crossing.
+- **B — Needle Ridge:** a rock spire in the northwest conifer uplands.
+- **C — Fern Basin:** southern wetlands with tree ferns, horsetails and a nearby spring.
+- **D — Lagoon Teeth:** submerged and exposed rock pinnacles in the southeast lagoon.
+
+The terrain uses shared two-metre height samples in 400 individually culled tiles. A spatial index limits collision searches to nearby objects. The world is bounded and loaded at startup; this is not an infinite streaming world. Dense vegetation and the larger landscape need real-device performance testing.
 
 ## Source
 
 | File | Purpose |
 | --- | --- |
 | `source/jurassic/world.js` | Coastline, species catalog, flora catalog, habitats and creature placement |
+| `source/jurassic/geography.js` | World bounds, regions, springs, provisions and landmarks |
+| `source/jurassic/terrain.js` | Original coast, connected terrain, shared heights and terrain tiles |
+| `source/jurassic/movement.js` | Player acceleration, slopes, jumping, collision and swimming |
+| `source/jurassic/spatial.js` | Nearby collision queries and vertical collision bounds |
 | `source/jurassic/plants.js` | Branches, fan leaves, fronds, cycads and segmented horsetails |
 | `source/jurassic/sculpt.js` | Authored continuous animal geometry, baked offline |
 | `source/jurassic/assets.js` | Embedded mesh and texture loading |

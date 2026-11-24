@@ -55,20 +55,21 @@ export const sceneShader = common + /*wgsl*/`
 struct Input {
   @location(0) p: vec3f, @location(1) n: vec3f, @location(2) color: vec3f, @location(3) joint: f32,
   @location(4) a: vec4f, @location(5) b: vec4f, @location(6) c: vec4f, @location(7) d: vec4f,
-  @location(8) tint: vec4f, @location(9) params: vec4f, @location(10) uv: vec2f, @location(11) pivot: vec3f, @location(12) weight: f32,
-  @location(13) motion: vec4f, @location(14) feet: vec4f
+  @location(8) contact0: vec4f, @location(9) params: vec4f, @location(10) uv: vec2f, @location(11) pivot: vec3f, @location(12) weight: f32,
+  @location(13) motion: vec4f, @location(14) feet: vec4f, @location(15) contact1: vec4f
 };
 struct Deformed { p: vec3f, n: vec3f };
 fn rotateX(p: vec3f, a: f32) -> vec3f { return vec3f(p.x, p.y * cos(a) - p.z * sin(a), p.y * sin(a) + p.z * cos(a)); }
 fn rotateY(p: vec3f, a: f32) -> vec3f { return vec3f(p.x * cos(a) + p.z * sin(a), p.y, -p.x * sin(a) + p.z * cos(a)); }
 fn deform(i: Input) -> Deformed {
-  var p = i.p; var normal = i.n; let moving = min(i.params.y / .45, 1.);
+  var p = i.p; var normal = i.n; let moving = min(i.params.y, 1.);
   if (i.joint >= 10. && i.joint <= 13.) {
     let leg = i32(i.joint) - 10; let biped = i.params.z == 2. || i.params.z == 6.;
     let offsets = select(vec4f(0., .5, .75, .25), vec4f(0., 0., .5, .5), biped);
     let phase = fract(i.motion.x / (2. * PI) + offsets[leg]); let swing = clamp((phase - .64) / .36, 0., 1.);
     let slide = select(.5 - swing, phase / .64 - .5, phase < .64) * i.motion.z * moving;
-    p.z += slide * i.weight; p.y += (sin(swing * PI) * i.motion.w * moving + i.feet[leg]) * i.weight;
+    let contacts = select(i.contact0, i.contact1, leg >= 2); let contact = (leg % 2) * 2;
+    p.x += contacts[contact] * i.weight; p.z += (slide + contacts[contact + 1]) * i.weight; p.y += (sin(swing * PI) * i.motion.w * moving + i.feet[leg]) * i.weight;
   }
   if (i.joint == 14. || i.joint == 15.) {
     let angle = sin(g.camera.w * select(.56, .25, i.joint == 15.) + i.params.x + p.z * .12) * select(.065, .025, i.joint == 15.);
@@ -90,7 +91,7 @@ struct Output {
 @vertex fn vs(i: Input) -> Output {
   let d = deform(i); let m = mat4x4f(i.a, i.b, i.c, i.d); let wp = m * vec4f(d.p, 1.);
   var o: Output; o.position = g.vp * wp; o.world = wp.xyz; o.normal = normalize((m * vec4f(d.n, 0.)).xyz);
-  o.color = i.color * i.tint.rgb; o.uv = i.uv; o.local = d.p; o.material = vec3f(i.params.w, i.params.z, select(0., 1., i.joint == 30.)); return o;
+  o.color = i.color; o.uv = i.uv; o.local = d.p; o.material = vec3f(i.params.w, i.params.z, select(0., 1., i.joint == 30.)); return o;
 }
 @vertex fn vsShadow(i: Input) -> @builtin(position) vec4f { let d = deform(i); return g.lightVP * mat4x4f(i.a, i.b, i.c, i.d) * vec4f(d.p, 1.); }
 fn fresnel(f0: vec3f, cosine: f32) -> vec3f { return f0 + (1. - f0) * pow(1. - cosine, 5.); }

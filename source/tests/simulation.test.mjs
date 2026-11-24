@@ -6,10 +6,12 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const bundle = await build({ stdin: { contents: "export * from './jurassic/simulation.js'; export * from './jurassic/world.js'; export * from './jurassic/renderer.js'; export * from './jurassic/assets.js';", resolveDir: root }, write: false, bundle: true, format: 'cjs', platform: 'node', target: 'es2022', loader: { '.bin': 'binary', '.jpg': 'dataurl' }, define: { __DEV__: 'false' },
+const bundle = await build({ stdin: { contents: "export * from './jurassic/simulation.js'; export * from './jurassic/world.js'; export * from './jurassic/renderer.js'; export * from './jurassic/assets.js'; export * from './jurassic/terrain.js'; export * from './jurassic/wildlife.js'; export * from './jurassic/spatial.js';", resolveDir: root }, write: false, bundle: true, format: 'cjs', platform: 'node', target: 'es2022', loader: { '.bin': 'binary', '.jpg': 'dataurl' }, define: { __DEV__: 'false' },
   plugins: [{ name: 'abyssal-math', setup(b) { b.onLoad({ filter: /[\\/]src[\\/]math\.js$/ }, ({ path: p }) => ({ contents: readFileSync(p, 'utf8') + '\nexport { Mesh, icosphere, surfaceNets, sampler3, rnd, rr, rseed, vnoise, fbm, clamp, mix, sstep };', loader: 'js' })); } }] });
 const module = { exports: {} }; new Function('module', 'exports', bundle.outputFiles[0].text)(module, module.exports);
 const { newGame, movePlayer, updateSurvival, updateCreatures, interact, eat, inspect, ground, makeCreatures, makeWorld, saveGame, loadGame, SAVE_KEY, DAY_SECONDS, CACHE, SPRING, SPECIES, FLORA, writeLightMatrix, detailedAnimals, unpackMesh, writeTransform } = module.exports;
+const { LIMIT, MAP_SPAN, WATER_SOURCES, CACHES, LANDMARKS, REGIONS, regionAt, coastHeight, nearestWater, indexColliders, nearby, groundCreature, gaitStep } = module.exports;
+let cachedWorld; const testWorld = () => cachedWorld ||= makeWorld();
 const tick = (game, input, seconds) => { for (let t = 0; t < seconds; t += 1 / 60) movePlayer(game, input, 1 / 60, []); };
 
 test('walking stays above terrain and jumping returns to the ground', () => {
@@ -72,7 +74,7 @@ test('release excludes development fixtures and preserves the upstream license a
   assert.ok(readFileSync(path.join(root, '..', 'abyssal.html'), 'utf8').includes('Abyssal Garden'));
 });
 test('the procedural world builds finite indexed geometry and all six species', () => {
-  const w = makeWorld(); assert.ok(w.objects.length > 900); assert.ok(w.colliders.length > 100);
+  const w = testWorld(); assert.ok(w.objects.length > 900); assert.ok(w.colliders.length > 100);
   for (const [name, mesh] of Object.entries(w.meshes)) { assert.ok(mesh.vertices.every(Number.isFinite), name); assert.ok(mesh.indices.every(i => i < mesh.vertices.length / 16), name); }
   assert.deepEqual([...new Set(makeCreatures().map(c => c.species))], [0, 1, 2, 3, 4, 5]);
   for (const name of ['tree', 'ginkgo', 'cycad', 'treefern', 'fern', 'horsetail']) assert.ok(w.objects.some(o => o.mesh === name), name);
@@ -178,8 +180,8 @@ test('terrain alignment and foot corrections stay bounded and reach the instance
   const g = newGame(), c = makeCreatures().find(c => c.species === 3); placePlayer(g, c.x + 10, c.z);
   wildlifeTick(g, [c], 2); assert.ok(Math.abs(c.pitch) > .001 || Math.abs(c.roll) > .001);
   assert.ok(Math.abs(c.pitch) <= .27 && Math.abs(c.roll) <= .22); assert.ok(c.feet.every(v => Number.isFinite(v) && Math.abs(v) <= .7));
-  const data = new Float32Array(32); writeTransform(data, 0, c); assert.ok(data.every(Number.isFinite));
-  assert.ok(Math.abs(data[1]) > .001 || Math.abs(data[9]) > .001); assert.ok(Math.abs(data[28] - c.feet[0]) < .00001);
+  const data = new Float32Array(36); writeTransform(data, 0, c); assert.ok(data.every(Number.isFinite));
+  assert.ok(Math.abs(data[1]) > .001 || Math.abs(data[9]) > .001); assert.ok(Math.abs(data[24] - c.feet[0]) < .00001);
 });
 
 test('obstacle steering and bounded habitats remain stable over a long simulated encounter', () => {
@@ -196,4 +198,95 @@ test('Stegosaurus head and tail weights match the common forward direction', () 
     if (v[i + 9] === 14 && v[i + 15] > .5) { assert.ok(v[i + 2] > 0); tails++; }
   }
   assert.ok(heads > 10 && tails > 10);
+});
+
+test('walking accelerates, releases smoothly and transitions into a sprint without an instant speed jump', () => {
+  const g = newGame(); movePlayer(g, { forward: 1 }, 1 / 60, []); assert.ok(Math.hypot(g.player.vx, g.player.vz) < .6);
+  tick(g, { forward: 1 }, 1); const walk = Math.hypot(g.player.vx, g.player.vz); assert.ok(walk > 2 && walk <= 3.21);
+  movePlayer(g, { forward: 1, sprint: true }, 1 / 60, []); const run = Math.hypot(g.player.vx, g.player.vz); assert.ok(run > walk && run - walk < .6);
+  tick(g, {}, .7); assert.ok(Math.hypot(g.player.vx, g.player.vz) < .03);
+});
+
+test('player collision slides past a trunk without penetrating or producing invalid velocity', () => {
+  const g = newGame(), p = g.player; p.yaw = 0; const trunk = { x: p.x + .4, z: p.z - 2, radius: .8 };
+  for (let i = 0; i < 180; i++) { movePlayer(g, { forward: 1 }, 1 / 60, [trunk]); assert.ok(Math.hypot(p.x - trunk.x, p.z - trunk.z) >= 1.149); }
+  assert.ok([p.x, p.y, p.z, p.vx, p.vz].every(Number.isFinite)); assert.ok(p.z < trunk.z);
+});
+
+test('swimming keeps its state across the surface band and recovers onto shallow land', () => {
+  const g = newGame(), p = g.player; p.x = 120; p.z = 30; p.y = 1.25; p.swimming = true;
+  movePlayer(g, {}, .016, []); assert.equal(p.swimming, true);
+  p.x = 56; p.z = 32; p.y = ground(56, 32) + 1.7; movePlayer(g, {}, .016, []); assert.equal(p.swimming, false); assert.ok(p.grounded);
+});
+
+test('the expanded region has separate wetlands, uplands and lagoon while retaining the starting terrain', () => {
+  assert.equal(LIMIT, 600); assert.equal(MAP_SPAN, 1280); assert.equal(REGIONS.length, 5);
+  for (const [x, z] of [[56, 32], [42, 16], [-27, -22], [132, 25], [-100.3, 40.7]]) {
+    const x0 = Math.floor(x / 2) * 2, z0 = Math.floor(z / 2) * 2, u = (x - x0) / 2, v = (z - z0) / 2;
+    const a = Math.fround(coastHeight(x0, z0)), b = Math.fround(coastHeight(x0 + 2, z0)), c = Math.fround(coastHeight(x0, z0 + 2)), d = Math.fround(coastHeight(x0 + 2, z0 + 2));
+    const legacy = u + v <= 1 ? a + (b - a) * u + (c - a) * v : d + (c - d) * (1 - u) + (b - d) * (1 - v);
+    assert.ok(Math.abs(ground(x, z) - legacy) < .00001);
+  }
+  assert.ok(ground(-350, -260) > 35); assert.ok(ground(-170, 280) < 7); assert.ok(ground(330, 210) < -4);
+  for (const p of REGIONS.slice(1)) assert.equal(regionAt(p.x, p.z, ground(p.x, p.z)), p.name);
+});
+
+test('terrain tiles join at the same heights and carry local positions for culling', () => {
+  const w = testWorld(), tiles = w.objects.filter(o => o.mesh.startsWith('terrain_')); assert.equal(tiles.length, 400);
+  const a = tiles.find(o => o.mesh === 'terrain_320_320'), b = tiles.find(o => o.mesh === 'terrain_352_320'), va = w.meshes[a.mesh].vertices, vb = w.meshes[b.mesh].vertices;
+  for (let row = 0; row <= 32; row++) {
+    const ia = (row * 33 + 32) * 16, ib = row * 33 * 16;
+    assert.ok(Math.abs(va[ia + 1] + a.y - vb[ib + 1] - b.y) < .00001);
+    assert.ok(Math.abs(va[ia] + a.x - vb[ib] - b.x) < .00001);
+  }
+});
+
+test('all regional springs and caches work with separate persistent provision cooldowns', () => {
+  const g = newGame(); assert.equal(WATER_SOURCES.length, 4); assert.equal(CACHES.length, 4); assert.equal(LANDMARKS.length, 4);
+  for (const source of WATER_SOURCES) { placePlayer(g, source.x, source.z); g.thirst = 10; interact(g); assert.equal(g.thirst, 100); }
+  for (const cache of CACHES) { placePlayer(g, cache.x, cache.z); const r = g.rations; interact(g); assert.equal(g.rations, r + 2); interact(g); assert.equal(g.rations, r + 2); }
+  const memory = new Map(), storage = { setItem: (k, v) => memory.set(k, v), getItem: k => memory.get(k) }; saveGame(g, storage); const restored = loadGame(storage);
+  assert.ok(restored); const r = restored.rations; interact(restored); assert.equal(restored.rations, r);
+});
+
+test('regional wildlife keeps separate herds and valid land or sea homes', () => {
+  const animals = makeCreatures(); assert.ok(animals.length >= 30); assert.ok(new Set(animals.map(c => c.herd)).size > 10);
+  for (const c of animals) assert.ok(SPECIES[c.species].role === 'marine' ? ground(c.x, c.z) < -4 : ground(c.x, c.z) > .35, `${c.herd}: ${ground(c.x, c.z)}`);
+  assert.equal(nearestWater(-350, -220).id, 'upland'); assert.equal(nearestWater(-170, 250).id, 'marsh');
+});
+
+test('spatial queries include large colliders across cell boundaries and omit distant cells', () => {
+  const colliders = indexColliders([{ x: 23, z: 0, radius: 5 }, { x: 400, z: 400, radius: 2 }]);
+  assert.equal(nearby(colliders, 28, 0, 1).length, 1); assert.equal(nearby(colliders, -300, -300, 2).length, 0);
+});
+
+test('an animal overlapping an obstacle can recover instead of remaining permanently pinned', () => {
+  const g = newGame(), c = makeCreatures()[0]; placePlayer(g, 50, 100); c.timer = 19; c.targetX = c.x; c.targetZ = c.z - 14; c.yaw = 0;
+  const obstacle = { x: c.x + .4, z: c.z, radius: 1 }; const before = Math.hypot(c.x - obstacle.x, c.z - obstacle.z);
+  wildlifeTick(g, [c], 12, [obstacle]); assert.ok(Math.hypot(c.x - obstacle.x, c.z - obstacle.z) > before + 1);
+});
+
+test('a stance foot stays near its captured contact during a small turn', () => {
+  const c = makeCreatures()[0]; c.speed = .5; c.gaitStrength = 1; c.gait = .5; groundCreature(c, 1); assert.ok(gaitStep(c, 0).stance);
+  const anchor = { ...c.anchors[0] }; c.x += .08; c.yaw += .025; groundCreature(c, .1);
+  assert.equal(c.anchors[0].x, anchor.x); assert.equal(c.anchors[0].z, anchor.z); assert.ok(c.footDrift.some(v => Math.abs(v) > .01));
+  const data = new Float32Array(36); writeTransform(data, 0, c); assert.ok(Math.abs(data[28] - c.footDrift[0]) < .00001);
+});
+
+test('legacy player saves and higher upland saves load with safe reset movement', () => {
+  const g = newGame(), memory = new Map(), storage = { setItem: (k, v) => memory.set(k, v), getItem: k => memory.get(k) };
+  delete g.player.vx; delete g.player.vz; saveGame(g, storage); let loaded = loadGame(storage); assert.equal(loaded.player.x, g.player.x); assert.equal(loaded.player.vx, 0);
+  placePlayer(g, -350, -260); saveGame(g, storage); loaded = loadGame(storage); assert.ok(loaded); assert.equal(loaded.player.z, -260); assert.ok(loaded.player.y >= ground(-350, -260) + 1.7);
+});
+
+test('a short rock does not become an invisible column above its actual height', () => {
+  const g = newGame(), p = g.player, x = p.x, z = p.z, floor = ground(x, z); p.y = floor + 10; p.grounded = false; p.yaw = 0; p.vz = -3;
+  const rock = { x, z: z - .2, radius: .8, bottom: floor - 1, top: floor + 1 };
+  movePlayer(g, { forward: 1 }, .1, [rock]); assert.ok(Math.abs(p.x - x) < .001); assert.ok(p.z < z - .25 && p.z > z - .36);
+});
+
+test('marine animals steer around rock pinnacles at their swimming depth', () => {
+  const g = newGame(), c = makeCreatures().find(c => c.herd === 'lagoon-marine'); placePlayer(g, 56, 32); c.yaw = 0; c.timer = 20; c.targetX = c.x; c.targetZ = c.z - 16;
+  const rock = { x: c.x, z: c.z - 5, radius: 1, bottom: -12, top: 2 };
+  for (let i = 0; i < 600; i++) { updateCreatures(g, [c], 1 / 60, [rock]); assert.ok(Math.hypot(c.x - rock.x, c.z - rock.z) > rock.radius + c.bodyRadius - .02); }
 });
