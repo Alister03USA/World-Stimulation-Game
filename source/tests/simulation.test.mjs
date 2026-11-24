@@ -6,10 +6,10 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const bundle = await build({ stdin: { contents: "export * from './jurassic/simulation.js'; export * from './jurassic/world.js';", resolveDir: root }, write: false, bundle: true, format: 'cjs', platform: 'node',
-  plugins: [{ name: 'abyssal-math', setup(b) { b.onLoad({ filter: /[\\/]src[\\/]math\.js$/ }, ({ path: p }) => ({ contents: readFileSync(p, 'utf8') + '\nexport { Mesh, icosphere, rnd, rr, rseed, vnoise, fbm, clamp, mix, sstep };', loader: 'js' })); } }] });
+const bundle = await build({ stdin: { contents: "export * from './jurassic/simulation.js'; export * from './jurassic/world.js'; export * from './jurassic/renderer.js'; export * from './jurassic/assets.js';", resolveDir: root }, write: false, bundle: true, format: 'cjs', platform: 'node', target: 'es2022', loader: { '.bin': 'binary', '.jpg': 'dataurl' }, define: { __DEV__: 'false' },
+  plugins: [{ name: 'abyssal-math', setup(b) { b.onLoad({ filter: /[\\/]src[\\/]math\.js$/ }, ({ path: p }) => ({ contents: readFileSync(p, 'utf8') + '\nexport { Mesh, icosphere, surfaceNets, sampler3, rnd, rr, rseed, vnoise, fbm, clamp, mix, sstep };', loader: 'js' })); } }] });
 const module = { exports: {} }; new Function('module', 'exports', bundle.outputFiles[0].text)(module, module.exports);
-const { newGame, movePlayer, updateSurvival, updateCreatures, interact, eat, inspect, ground, makeCreatures, makeWorld, saveGame, loadGame, SAVE_KEY, DAY_SECONDS, CACHE, SPRING } = module.exports;
+const { newGame, movePlayer, updateSurvival, updateCreatures, interact, eat, inspect, ground, makeCreatures, makeWorld, saveGame, loadGame, SAVE_KEY, DAY_SECONDS, CACHE, SPRING, SPECIES, FLORA, writeLightMatrix, detailedAnimals, unpackMesh } = module.exports;
 const tick = (game, input, seconds) => { for (let t = 0; t < seconds; t += 1 / 60) movePlayer(game, input, 1 / 60, []); };
 
 test('walking stays above terrain and jumping returns to the ground', () => {
@@ -49,7 +49,7 @@ test('observation requires facing wildlife and cannot cross the air/water bounda
 test('death and the full-day objective lead to distinct outcomes', () => {
   const g = newGame(); g.health = 1; g.oxygen = 0; g.player.y = -3; updateSurvival(g, 1); assert.equal(g.dead, true);
   const win = newGame(); win.elapsed = DAY_SECONDS; updateSurvival(win, .01); assert.equal(win.won, false);
-  win.discovered = [0, 1, 2]; win.drank = win.supplied = true; updateSurvival(win, .01); assert.equal(win.won, true);
+  win.discovered = SPECIES.map((_, i) => i); win.drank = win.supplied = true; updateSurvival(win, .01); assert.equal(win.won, true);
 });
 test('saves round-trip and malformed or finished saves are ignored', () => {
   const memory = new Map(), storage = { setItem: (k, v) => memory.set(k, v), getItem: k => memory.get(k) };
@@ -68,8 +68,55 @@ test('release excludes development fixtures and preserves the upstream license a
   assert.ok(html.includes('Permission is hereby granted, free of charge'));
   assert.ok(readFileSync(path.join(root, '..', 'abyssal.html'), 'utf8').includes('Abyssal Garden'));
 });
-test('the procedural world builds finite indexed geometry and all three species', () => {
+test('the procedural world builds finite indexed geometry and all six species', () => {
   const w = makeWorld(); assert.ok(w.objects.length > 900); assert.ok(w.colliders.length > 100);
-  for (const [name, mesh] of Object.entries(w.meshes)) { assert.ok(mesh.vertices.every(Number.isFinite), name); assert.ok(mesh.indices.every(i => i < mesh.vertices.length / 10), name); }
-  assert.deepEqual([...new Set(makeCreatures().map(c => c.species))], [0, 1, 2]);
+  for (const [name, mesh] of Object.entries(w.meshes)) { assert.ok(mesh.vertices.every(Number.isFinite), name); assert.ok(mesh.indices.every(i => i < mesh.vertices.length / 16), name); }
+  assert.deepEqual([...new Set(makeCreatures().map(c => c.species))], [0, 1, 2, 3, 4, 5]);
+  for (const name of ['tree', 'ginkgo', 'cycad', 'treefern', 'fern', 'horsetail']) assert.ok(w.objects.some(o => o.mesh === name), name);
+});
+
+test('expanded Jurassic catalog uses distinct models and roles', () => {
+  assert.equal(SPECIES.length, 6); assert.equal(FLORA.length, 6);
+  assert.equal(new Set(SPECIES.map(s => s.mesh)).size, 6);
+  assert.equal(SPECIES[3].name, 'Brachiosaurus'); assert.equal(SPECIES[4].name, 'Diplodocus'); assert.equal(SPECIES[5].name, 'Ceratosaurus');
+  const animals = makeCreatures();
+  for (const c of animals) { assert.equal(c.role, SPECIES[c.species].role); assert.equal(c.material, SPECIES[c.species].material); }
+});
+
+test('detailed meshes retain UVs, deformation weights, and smooth finite normals', () => {
+  const models = detailedAnimals();
+  for (const [name, m] of Object.entries(models)) {
+    assert.ok(m.indices.length > 12000, name); assert.equal(m.vertices.length % 16, 0);
+    for (let i = 0; i < m.vertices.length; i += 16) {
+      assert.ok(m.vertices.subarray(i, i + 16).every(Number.isFinite), name);
+      assert.ok(m.vertices[i + 15] >= 0 && m.vertices[i + 15] <= 1, name);
+    }
+  }
+  assert.ok(models.stego.vertices.some((v, i) => i % 16 === 15 && v > .5));
+  assert.throws(() => unpackMesh(new Uint8Array(16)), /Unsupported/);
+});
+
+test('new predator uses the same attack cooldown and water escape rules', () => {
+  const g = newGame(), c = makeCreatures().find(c => c.species === 5);
+  g.player.x = c.x + 2; g.player.z = c.z; g.player.y = ground(c.x, c.z) + 1.7;
+  updateCreatures(g, [c], .016); assert.equal(g.health, 87);
+  updateCreatures(g, [c], .016); assert.equal(g.health, 87);
+  g.player.y = -.5; updateCreatures(g, [c], .016); assert.ok(!['Approaching', 'Attacking'].includes(c.state));
+});
+
+test('existing three-species saves keep observations while the expanded goal requires six', () => {
+  const g = newGame(), memory = new Map(), storage = { setItem: (k, v) => memory.set(k, v), getItem: k => memory.get(k) };
+  g.discovered = [0, 1, 2]; g.elapsed = DAY_SECONDS; g.drank = g.supplied = true;
+  saveGame(g, storage); const restored = loadGame(storage); assert.deepEqual(restored.discovered, [0, 1, 2]);
+  updateSurvival(restored, .01); assert.equal(restored.won, false);
+  restored.discovered.push(3, 4, 5); updateSurvival(restored, .01); assert.equal(restored.won, true);
+});
+
+test('shadow projection stays finite and centers its tracked region', () => {
+  const out = new Float32Array(64), light = [.4, .8, -.4], l = Math.hypot(...light); writeLightMatrix(out, 44, 20, 10, -30, light.map(v => v / l));
+  assert.ok(out.every(Number.isFinite));
+  const m = out.subarray(44), p = [20, 10, -30];
+  assert.ok(Math.abs(m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12]) < .00001);
+  assert.ok(Math.abs(m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13]) < .00001);
+  assert.ok(Math.abs(m[2] * p[0] + m[6] * p[1] + m[10] * p[2] + m[14] - .5) < .00001);
 });

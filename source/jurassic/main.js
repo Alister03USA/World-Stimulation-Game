@@ -1,5 +1,5 @@
 /*! World Stimulation Game. Based on Abyssal Garden by Maksymilian Dendura (MIT). */
-import { makeWorld, makeCreatures, ground, SPECIES, SPRING, CACHE, DAY_SECONDS } from './world.js';
+import { makeWorld, makeCreatures, ground, SPECIES, FLORA, SPRING, CACHE, DAY_SECONDS } from './world.js';
 import { newGame, movePlayer, updateCreatures, updateSurvival, interact, eat, inspect, saveGame, loadGame, SAVE_KEY } from './simulation.js';
 import { makeRenderer } from './renderer.js';
 import { makeAudio } from './audio.js';
@@ -103,7 +103,7 @@ $('sound').onclick = () => { audio.start(); keyAction('KeyV'); };
 addEventListener('pagehide', () => { if (ready && !game.dead && !game.won) saveGame(game); });
 
 function updateJournal() {
-  $('journal-count').textContent = `${game.discovered.length} / 3`;
+  $('journal-count').textContent = `${game.discovered.length} / ${SPECIES.length}`;
   $('journal-entries').replaceChildren(...SPECIES.map((s, i) => {
     const article = document.createElement('article'), discovered = game.discovered.includes(i);
     article.className = discovered ? 'record observed' : 'record';
@@ -112,6 +112,10 @@ function updateJournal() {
     const type = document.createElement('p'); type.className = 'record-type'; type.textContent = s.kind;
     const text = document.createElement('p'); text.textContent = s.detail;
     article.append(label, heading, type, text); return article;
+  }));
+  $('flora-entries').replaceChildren(...FLORA.map(plant => {
+    const article = document.createElement('article'), title = document.createElement('h3'), text = document.createElement('p');
+    article.className = 'record flora-record'; title.textContent = plant.name; text.textContent = plant.detail; article.append(title, text); return article;
   }));
 }
 
@@ -148,9 +152,9 @@ function updateHUD() {
   $('ration-count').textContent = game.rations;
   $('survived').textContent = `${Math.floor(game.elapsed / 60)}m ${String(Math.floor(game.elapsed % 60)).padStart(2, '0')}s`;
   $('day-progress').style.width = `${Math.min(100, game.elapsed / DAY_SECONDS * 100)}%`;
-  const tasks = [game.supplied, game.drank, game.discovered.length === 3, game.elapsed >= DAY_SECONDS];
+  const tasks = [game.supplied, game.drank, game.discovered.length === SPECIES.length, game.elapsed >= DAY_SECONDS];
   tasks.forEach((done, i) => { $(`task-${i}`).classList.toggle('done', done); $(`task-${i}`).querySelector('span').textContent = done ? '✓' : '○'; });
-  $('species-progress').textContent = `${game.discovered.length}/3`;
+  $('species-progress').textContent = `${game.discovered.length}/${SPECIES.length}`;
   const nearSpring = Math.hypot(game.player.x - SPRING.x, game.player.z - SPRING.z) < 6, nearCache = Math.hypot(game.player.x - CACHE.x, game.player.z - CACHE.z) < 4;
   $('interaction').hidden = !nearSpring && !nearCache;
   $('interaction-text').textContent = nearSpring ? 'Drink from the freshwater spring' : 'Search the shoreline supply cache';
@@ -158,7 +162,7 @@ function updateHUD() {
   if (seen) { const s = SPECIES[seen.species]; $('animal-name').textContent = s.name; $('animal-state').textContent = `${s.kind} · ${seen.state.toLowerCase()} · F to observe`; }
   const threat = creatures.find(c => (c.state === 'Approaching' || c.state === 'Attacking') && Math.hypot(c.x - game.player.x, c.z - game.player.z) < 26);
   $('warning').hidden = !threat;
-  if (threat) $('warning').textContent = threat.species === 1 ? 'ALLOSAURUS NEARBY · Keep your distance or reach the water' : 'MARINE REPTILE NEARBY · Give it space';
+  if (threat) $('warning').textContent = SPECIES[threat.species].role === 'hunter' ? `${SPECIES[threat.species].name.toUpperCase()} NEARBY · Keep your distance or reach the water` : 'MARINE REPTILE NEARBY · Give it space';
   $('fps').textContent = `${Math.round(fps)} fps`; drawMap();
 }
 
@@ -166,7 +170,7 @@ function endGame() {
   paused = true; clearInput(); if (document.pointerLockElement) document.exitPointerLock();
   $('menu').hidden = true; $('guide').hidden = true; $('outcome').hidden = false; $('hud').inert = true; document.body.classList.remove('playing');
   $('outcome-title').textContent = game.dead ? 'The coast endured.' : 'You belong to the coast.';
-  $('outcome-text').textContent = game.dead ? `Your expedition lasted ${Math.floor(game.elapsed / 60)}m ${Math.floor(game.elapsed % 60)}s. Start again, keep supplies close, and give predators space.` : 'You survived a full day, found fresh water and supplies, and recorded all three Jurassic animals. Your first expedition is complete.';
+  $('outcome-text').textContent = game.dead ? `Your expedition lasted ${Math.floor(game.elapsed / 60)}m ${Math.floor(game.elapsed % 60)}s. Start again, keep supplies close, and give predators space.` : `You survived a full day, found fresh water and supplies, and recorded all ${SPECIES.length} Jurassic animals. Your first expedition is complete.`;
   audio.update(false, false, true); try { localStorage.removeItem(SAVE_KEY); } catch {}
   $('restart').focus();
 }
@@ -209,9 +213,10 @@ async function boot() {
     } });
     if (__DEV__) {
       const panel = document.createElement('aside'); panel.id = 'dev-tools'; panel.hidden = true;
-      panel.style.cssText = 'position:fixed;top:75px;left:50%;transform:translateX(-50%);z-index:30;display:flex;gap:4px;background:#102019;padding:8px';
+      panel.style.cssText = 'position:fixed;top:75px;left:50%;transform:translateX(-50%);z-index:30;display:flex;flex-wrap:wrap;justify-content:center;width:min(1000px,94vw);gap:4px;background:#102019;padding:8px';
       const poses = [
-        ['Coast', 56, 32, -.9, -.06, null], ['Grove', 27, 4, -.3, -.1, null],
+        ['Coast', 56, 32, -.9, -.06, null], ['Stegosaurus', 51, 29, -.55, .025, null],
+        ['Brachiosaurus', 26, -10, -.7, .19, null], ['Diplodocus', -35, 48, -.8, .05, null], ['Ceratosaurus', -61, -9, -.65, .04, null],
         ['Spring', 29, 14, -.8, -.35, null], ['Predator', -23, -15, -.5, -.05, null],
         ['Dive', 130, 34, .3, 0, -4], ['Surface', 130, 34, -1.5, 0, .65]
       ];

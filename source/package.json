@@ -8,10 +8,14 @@
     "build:readable": "node build-jurassic.mjs --dev",
     "build:dev": "node build-jurassic.mjs --dev",
     "build:abyssal": "node build.mjs --abyssal",
+    "assets:sculpt": "node tools/bake-sculpts.mjs",
+    "assets:import": "node tools/prepare-assets.mjs",
     "test": "node --test tests/simulation.test.mjs",
     "start": "node serve.mjs"
   },
   "devDependencies": {
-    "esbuild": "^0.28.2"
+    "esbuild": "^0.28.2",
+    "meshoptimizer": "^1.3.0",
+    "sharp": "^0.35.5"
   }
 }

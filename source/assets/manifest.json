@@ -1,0 +1,88 @@
+{
+  "assets": [
+    {
+      "name": "stegosaurus",
+      "source": "https://grab3d.com/models/creatures/stegosaurus/",
+      "download": "https://grab3d.com/dl/stegosaurus/stegosaurus.glb",
+      "author": "Grab3D",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://grab3d.com/license/",
+      "sourceSha256": "eab01a7bb9355e205144f56c0f495657e1f09cad9ef4b10735ad862a05317145",
+      "originalTriangles": 375857,
+      "triangles": 24000,
+      "vertices": 18019,
+      "relativeSimplificationError": 0.0008891208562999964,
+      "size": {
+        "width": 1.8929407596588135,
+        "height": 3.924309107067529,
+        "length": 8.999433517456055
+      },
+      "forwardFlipped": false,
+      "feet": [
+        [
+          -0.5300234127044678,
+          1.648209824968362,
+          -1.799886703491211
+        ],
+        [
+          -0.5381774088716507,
+          1.648209824968362,
+          1.3304011016082764
+        ],
+        [
+          0.4527283048217258,
+          1.648209824968362,
+          -0.21508153015197642
+        ],
+        [
+          0.6053789204458088,
+          1.648209824968362,
+          2.2876799121368974
+        ]
+      ],
+      "modification": "Mesh simplification; 1K texture resizing; forward alignment; procedural deformation weights. Source is a static model, not a skeletal rig."
+    },
+    {
+      "name": "brachiosaurus",
+      "source": "https://grab3d.com/models/creatures/brachiosaurus/",
+      "download": "https://grab3d.com/dl/brachiosaurus/brachiosaurus.glb",
+      "author": "Grab3D",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://grab3d.com/license/",
+      "sourceSha256": "a8b8028c1bf373d155ba2b9d1d63114af5ef91f0002aa2ba2ba1e5b161a8a2f8",
+      "originalTriangles": 181914,
+      "triangles": 20000,
+      "vertices": 15151,
+      "relativeSimplificationError": 0.0006904620677232742,
+      "size": {
+        "width": 3.0907106399536133,
+        "height": 11.968631721159909,
+        "length": 13.399076461791992
+      },
+      "forwardFlipped": true,
+      "feet": [
+        [
+          -1.00861502444579,
+          4.308707419617567,
+          -2.419834514696443
+        ],
+        [
+          -1.0094978094595597,
+          4.308707419617567,
+          0.09444723980060751
+        ],
+        [
+          0.9783782427263218,
+          4.308707419617567,
+          -2.3093049653620175
+        ],
+        [
+          0.8653989791870118,
+          4.308707419617567,
+          2.6798152923583984
+        ]
+      ],
+      "modification": "Mesh simplification; 1K texture resizing; forward alignment; procedural deformation weights. Source is a static model, not a skeletal rig."
+    }
+  ]
+}

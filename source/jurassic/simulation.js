@@ -1,4 +1,4 @@
-import { ground, LIMIT, SPAWN, SPRING, CACHE, DAY_SECONDS } from './world.js';
+import { ground, LIMIT, SPAWN, SPRING, CACHE, DAY_SECONDS, SPECIES } from './world.js';
 import { clamp } from '../src/math.js';
 
 export const SAVE_KEY = typeof __DEV__ !== 'undefined' && __DEV__ ? 'world-stimulation-jurassic-dev-v1' : 'world-stimulation-jurassic-v1';
@@ -46,25 +46,25 @@ export function updateCreatures(game, creatures, dt, colliders = []) {
   const p = game.player;
   for (const c of creatures) {
     c.timer -= dt; c.cooldown = Math.max(0, c.cooldown - dt);
-    const distance = Math.hypot(p.x - c.x, p.z - c.z), aquatic = c.species === 2, playerInWater = p.y < .9;
-    const danger = c.species === 1 && !playerInWater && ground(p.x, p.z) > 0 && distance < 25;
+    const role = SPECIES[c.species].role, distance = Math.hypot(p.x - c.x, p.z - c.z), aquatic = role === 'marine', playerInWater = p.y < .9;
+    const danger = role === 'hunter' && !playerInWater && ground(p.x, p.z) > 0 && distance < 25;
     const marineThreat = aquatic && playerInWater && distance < 13;
-    const fleeing = c.species === 0 && distance < 8;
+    const fleeing = role === 'browser' && distance < 7;
     let targetX, targetZ, speed;
     if (danger || marineThreat) { c.state = distance < 5 ? 'Attacking' : 'Approaching'; targetX = p.x; targetZ = p.z; speed = aquatic ? 2.1 : 3.65; }
     else if (fleeing) { c.state = 'Moving away'; targetX = c.x + (c.x - p.x) * 3; targetZ = c.z + (c.z - p.z) * 3; speed = 2; }
     else {
       if (c.timer <= 0) {
-        const a = game.clock * .17 + c.phase * 3.1, r = aquatic ? 12 : 10;
+        const a = game.clock * .11 + c.phase * 3.1, r = aquatic ? 12 : role === 'giant' ? 7 : 9;
         c.targetX = c.homeX + Math.sin(a) * r; c.targetZ = c.homeZ + Math.cos(a * .73) * r; c.timer = 7 + Math.sin(a) * 2;
       }
       targetX = c.targetX; targetZ = c.targetZ;
-      speed = aquatic ? 1.05 : c.timer > 4 ? .65 : 0; c.state = speed ? 'Wandering' : c.species === 0 ? 'Browsing' : 'Resting';
+      speed = aquatic ? 1.05 : c.timer > 4 ? role === 'giant' ? .43 : .65 : 0; c.state = speed ? 'Wandering' : role === 'browser' || role === 'giant' ? 'Browsing' : 'Resting';
     }
     if (Math.hypot(targetX - c.x, targetZ - c.z) < 1) speed = 0;
     const desired = Math.atan2(targetX - c.x, -(targetZ - c.z)); c.yaw = turnToward(c.yaw, desired, dt * (aquatic ? .6 : 1.1));
     const nx = c.x + Math.sin(c.yaw) * speed * dt, nz = c.z - Math.cos(c.yaw) * speed * dt, h = ground(nx, nz);
-    const blocked = !aquatic && colliders.some(o => Math.hypot(nx - o.x, nz - o.z) < o.radius + c.scale * 1.2);
+    const blocked = !aquatic && colliders.some(o => Math.hypot(nx - o.x, nz - o.z) < o.radius + c.scale * (role === 'giant' ? 1.8 : .9));
     if ((aquatic ? h < -4 : h > 2 && Math.abs(h - ground(c.x, c.z)) < .5) && !blocked) { c.x = nx; c.z = nz; c.speed = speed; }
     else { c.timer = 0; c.yaw += dt; c.speed = 0; }
     if (aquatic) c.y = Math.max(h + 2, -4.5 + Math.sin(game.clock * .2 + c.phase) * 1.2);
@@ -82,7 +82,7 @@ export function updateSurvival(game, dt) {
   if (!game.oxygen || !game.hunger || !game.thirst) game.health = Math.max(0, game.health - dt * (!game.oxygen ? 9 : 1.1));
   else if (game.hunger > 35 && game.thirst > 35 && game.elapsed - game.attackAt > 12) game.health = Math.min(100, game.health + dt * .45);
   if (game.health <= 0) game.dead = true;
-  if (!game.dead && game.elapsed >= DAY_SECONDS && game.discovered.length === 3 && game.drank && game.supplied) game.won = true;
+  if (!game.dead && game.elapsed >= DAY_SECONDS && game.discovered.length === SPECIES.length && game.drank && game.supplied) game.won = true;
 }
 
 export function interact(game) {
@@ -107,7 +107,7 @@ export function inspect(game, creatures) {
   const p = game.player, f = [Math.sin(p.yaw) * Math.cos(p.pitch), Math.sin(p.pitch), -Math.cos(p.yaw) * Math.cos(p.pitch)];
   let found = null, nearest = 65;
   for (const c of creatures) {
-    const dx = c.x - p.x, dy = c.y + (c.species === 2 ? 0 : 2) - p.y, dz = c.z - p.z, d = Math.hypot(dx, dy, dz);
+    const dx = c.x - p.x, dy = c.y + (SPECIES[c.species].viewHeight || 0) * (c.scale || 1) - p.y, dz = c.z - p.z, d = Math.hypot(dx, dy, dz);
     if (d < nearest && (dx * f[0] + dy * f[1] + dz * f[2]) / Math.max(d, .01) > .91) {
       // Avoid spotting an animal through a ridge or across the air/water boundary.
       if ((p.y < 0) !== (c.y < 0)) continue;
@@ -129,7 +129,7 @@ export function loadGame(storage) {
     const game = newGame(), numeric = ['health', 'stamina', 'hunger', 'thirst', 'oxygen', 'rations', 'elapsed', 'clock', 'cacheAt'];
     if (numeric.some(k => !Number.isFinite(data[k])) || ['x', 'y', 'z', 'yaw', 'pitch'].some(k => !Number.isFinite(data.player[k]))) return null;
     if (Math.hypot(data.player.x, data.player.z) > LIMIT + 1 || data.player.y < -40 || data.player.y > 90 || data.elapsed < 0 || data.rations < 0 || data.rations > 1000) return null;
-    Object.assign(game, data); game.discovered = [...new Set((Array.isArray(data.discovered) ? data.discovered : []).filter(i => Number.isInteger(i) && i >= 0 && i <= 2))];
+    Object.assign(game, data); game.discovered = [...new Set((Array.isArray(data.discovered) ? data.discovered : []).filter(i => Number.isInteger(i) && i >= 0 && i < SPECIES.length))];
     for (const k of ['health', 'stamina', 'hunger', 'thirst', 'oxygen']) game[k] = clamp(game[k], 0, 100);
     game.player.vy = 0; game.player.pitch = clamp(game.player.pitch, -1.45, 1.45); game.damage = 0;
     game.player.y = Math.max(ground(game.player.x, game.player.z) + 1.7, game.player.y);
