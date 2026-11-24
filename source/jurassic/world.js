@@ -10,11 +10,11 @@ import { makeConifer, makeFern, makeCycad, makeGinkgo, makeHorsetail } from './p
 
 export const SPECIES = [
   { name: 'Stegosaurus', mesh: 'stego', role: 'browser', kind: 'Herbivore', material: 1, radius: 5.5, viewHeight: 2, detail: 'A Late Jurassic plated browser with a small head and four tail spikes. Keep clear of its tail.', color: '#c7d59b' },
-  { name: 'Allosaurus', mesh: 'allo', role: 'hunter', kind: 'Predator', material: 0, radius: 5, viewHeight: 2.6, detail: 'A Late Jurassic theropod with three-fingered hands and crests above its eyes. Keep your distance.', color: '#e5a66b' },
-  { name: 'Cryptoclidus', mesh: 'crypto', role: 'marine', kind: 'Marine reptile', material: 0, radius: 5, viewHeight: 0, detail: 'A Middle Jurassic plesiosaur propelled by four flippers. A marine reptile, not a dinosaur.', color: '#8ed1cf' },
+  { name: 'Allosaurus', mesh: 'allo', role: 'hunter', kind: 'Predator', material: 3, radius: 5, viewHeight: 2.6, detail: 'A Late Jurassic theropod with three-fingered hands and crests above its eyes. Keep your distance.', color: '#e5a66b' },
+  { name: 'Cryptoclidus', mesh: 'crypto', role: 'marine', kind: 'Marine reptile', material: 3, radius: 5, viewHeight: 0, detail: 'A Middle Jurassic plesiosaur propelled by four flippers. A marine reptile, not a dinosaur.', color: '#8ed1cf' },
   { name: 'Brachiosaurus', mesh: 'brachio', role: 'giant', kind: 'High browser', material: 2, radius: 16, viewHeight: 7, detail: 'A Late Jurassic sauropod with long forelimbs and an elevated neck. Its reconstruction remains partly uncertain.', color: '#d6c69a' },
-  { name: 'Diplodocus', mesh: 'diplo', role: 'giant', kind: 'Low browser', material: 0, radius: 16, viewHeight: 3, detail: 'A Late Jurassic sauropod with a low, long neck, small head and whip-like tail. Watch the whole herd from a distance.', color: '#b1c6a1' },
-  { name: 'Ceratosaurus', mesh: 'cerato', role: 'hunter', kind: 'Predator', material: 0, radius: 4, viewHeight: 2.4, detail: 'A Late Jurassic carnivore with a nasal horn and a line of small bony scutes on its back.', color: '#d9ab8b' }
+  { name: 'Diplodocus', mesh: 'diplo', role: 'giant', kind: 'Low browser', material: 3, radius: 16, viewHeight: 3, detail: 'A Late Jurassic sauropod with a low, long neck, small head and whip-like tail. Watch the whole herd from a distance.', color: '#b1c6a1' },
+  { name: 'Ceratosaurus', mesh: 'cerato', role: 'hunter', kind: 'Predator', material: 3, radius: 4, viewHeight: 2.4, detail: 'A Late Jurassic carnivore with a nasal horn and a line of small bony scutes on its back.', color: '#d9ab8b' }
 ];
 export const FLORA = [
   { name: 'Araucarian conifers', detail: 'Jurassic forests included relatives of monkey-puzzle trees. Tiered woody branches carry dense sprays of narrow leaves.' },

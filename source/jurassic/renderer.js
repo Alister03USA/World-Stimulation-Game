@@ -14,15 +14,16 @@ export function writeLightMatrix(out, offset, x, y, z, light) {
 }
 
 async function makeSurfaceTextures(device) {
-  const textures = ['rgba8unorm-srgb', 'rgba8unorm', 'rgba8unorm'].map(format => device.createTexture({ size: [1024, 1024, 3], format, mipLevelCount: 11, usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT }));
+  const textures = ['rgba8unorm-srgb', 'rgba8unorm', 'rgba8unorm'].map(format => device.createTexture({ size: [1024, 1024, animalTextures.length], format, mipLevelCount: 11, usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT }));
   const defaults = [[255, 255, 255, 255], [128, 128, 255, 255], [255, 210, 0, 255]];
   for (let channel = 0; channel < 3; channel++) for (let mip = 0; mip < 11; mip++) {
     const w = Math.max(1, 1024 >> mip), pixels = new Uint8Array(w * w * 4);
     for (let i = 0; i < pixels.length; i += 4) pixels.set(defaults[channel], i);
-    device.queue.writeTexture({ texture: textures[channel], mipLevel: mip, origin: [0, 0, 0] }, pixels, { bytesPerRow: w * 4 }, [w, w, 1]);
+    for (let layer = 0; layer < animalTextures.length; layer++) device.queue.writeTexture({ texture: textures[channel], mipLevel: mip, origin: [0, 0, layer] }, pixels, { bytesPerRow: w * 4 }, [w, w, 1]);
   }
   await Promise.all(animalTextures.slice(1).flatMap((channels, layer) => channels.map(async (url, channel) => {
-    const blob = await (await fetch(url)).blob(), image = await createImageBitmap(blob, { colorSpaceConversion: 'none' });
+    if (!url) return;
+    const blob = await (await fetch(url)).blob(), image = await createImageBitmap(blob, { resizeWidth: 1024, resizeHeight: 1024, resizeQuality: 'high', colorSpaceConversion: 'none' });
     for (let mip = 0; mip < 11; mip++) {
       const w = Math.max(1, 1024 >> mip), small = mip ? await createImageBitmap(image, { resizeWidth: w, resizeHeight: w, resizeQuality: 'high', colorSpaceConversion: 'none' }) : image;
       device.queue.copyExternalImageToTexture({ source: small }, { texture: textures[channel], mipLevel: mip, origin: [0, 0, layer + 1] }, [w, w]);

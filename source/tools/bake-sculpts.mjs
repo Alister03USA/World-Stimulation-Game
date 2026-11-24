@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const result = await build({ entryPoints: [path.join(root, 'jurassic/sculpt.js')], bundle: true, write: false, format: 'esm', platform: 'node', target: 'es2022',
+const result = await build({ entryPoints: [path.join(root, 'jurassic/appearance.js')], bundle: true, write: false, format: 'esm', platform: 'node', target: 'es2022',
   plugins: [{ name: 'abyssal-math', setup(b) { b.onLoad({ filter: /[\\/]src[\\/]math\.js$/ }, ({ path: p }) => ({ contents: readFileSync(p, 'utf8') + '\nexport { Mesh, icosphere, surfaceNets, sampler3, rnd, rr, rseed, vnoise, fbm, clamp, mix, sstep };', loader: 'js' })); } }] });
 const sculpt = await import('data:text/javascript;base64,' + Buffer.from(result.outputFiles[0].text).toString('base64'));
 for (const [name, make] of [['allosaurus', () => sculpt.makeAllosaurus()], ['ceratosaurus', () => sculpt.makeAllosaurus(true)], ['diplodocus', sculpt.makeDiplodocus], ['cryptoclidus', sculpt.makeCryptoclidus]]) {

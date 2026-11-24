@@ -116,7 +116,7 @@ npm test              # simulation and geometry regression checks
 npm run build         # release index.html
 npm run build:dev     # readable dev.html with development-only viewpoints
 npm run build:abyssal # rebuild the original demo as abyssal.html
-npm run assets:sculpt # rebake the four authored animals after editing sculpt.js
+npm run assets:sculpt # rebake the four authored animals after editing appearance.js / sculpt.js
 npm run assets:import -- /path/to/glbs # reconvert the two original licensed source GLBs
 npm run assets:portraits # rerender all six journal portraits from the baked meshes
 ```
@@ -128,3 +128,9 @@ WebGPU is required; unsupported devices get an on-screen startup message. The re
 ## License
 
 [MIT](LICENSE) code and authored geometry; the two imported Grab3D model/texture sets are CC0. Preserve the original copyright and license when redistributing. The Jurassic HTML embeds the original MIT text for its reused code. See [THIRD_PARTY.md](THIRD_PARTY.md) for provenance and source links.
+
+## Animal appearance update
+
+Allosaurus and Ceratosaurus now have distinct profiled skulls, small inset eyes, nostrils, separate jaws/teeth, finger claws and rigged toes. Ceratosaurus has a blade-shaped nasal horn and small dorsal scutes. Diplodocus has a smaller profiled head, pillar-like feet and a continuous tapered whip tail. Cryptoclidus has a flattened torso, small head and four hydrofoil-shaped flippers with separate stroke/twist deformation. The four journal portraits are regenerated from these actual game models.
+
+The embedded [CC0 reptile skin photo](https://opengameart.org/content/reptile-skin) supplies surface variation without runtime downloads; animal colors and skin patterns remain artistic reconstructions. Provenance and anatomical reference links are in `source/assets/appearance-sources.json` and `THIRD_PARTY.md`. To reimport the original photo, run `node tools/prepare-skin.mjs /path/to/lizard_skin.png` from `source/`, then bake meshes, render portraits and build. This is procedural deformation, not a complete skeletal rig.

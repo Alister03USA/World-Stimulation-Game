@@ -8,6 +8,12 @@ const assets = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../as
 await mkdir(out, { recursive: true });
 const width = 640, height = 400, right = [.585, 0, .811], up = [-.203, .968, .146], view = [.785, .25, -.566];
 const dot = (a, b) => a.reduce((n, v, i) => n + v * b[i], 0), clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const skin = await sharp(path.join(assets, 'reptile-skin.png')).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+const skinValue = (u, v) => {
+  const x = Math.floor((u - Math.floor(u)) * skin.info.width), y = Math.floor((v - Math.floor(v)) * skin.info.height), at = (x + y * skin.info.width) * 3;
+  const linear = c => { const s = c / 255; return s <= .04045 ? s / 12.92 : ((s + .055) / 1.055) ** 2.4; };
+  return dot([...skin.data.subarray(at, at + 3)].map(linear), [.2126, .7152, .0722]);
+};
 for (const name of ['stegosaurus', 'allosaurus', 'cryptoclidus', 'brachiosaurus', 'diplodocus', 'ceratosaurus']) {
   const file = await readFile(path.join(assets, name + '.bin')), count = file.readUInt32LE(4), n = file.readUInt32LE(8);
   const vertices = new Float32Array(count * 16), indices = new Uint32Array(n);
@@ -46,7 +52,12 @@ for (const name of ['stegosaurus', 'allosaurus', 'cryptoclidus', 'brachiosaurus'
       if (texture) {
         const tx = clamp(Math.round(attribute(10) * (texture.info.width - 1)), 0, texture.info.width - 1), ty = clamp(Math.round(attribute(11) * (texture.info.height - 1)), 0, texture.info.height - 1);
         const offset = (tx + ty * texture.info.width) * 3; color = [...texture.data.subarray(offset, offset + 3)];
-      } else { const stripe = .86 + .10 * Math.sin(attribute(2) * 2.1 + attribute(1)); color = [6, 7, 8].map(k => Math.pow(clamp(attribute(k) * stripe, 0, 1), .72) * 255); }
+      } else {
+        const frequency = name === 'diplodocus' ? 1 : name === 'cryptoclidus' ? 2.8 : 1.6, q = [0, 1, 2].map(k => attribute(k) * frequency), weights = normal.map(v => (Math.abs(v) / len) ** 4), sum = weights.reduce((a, b) => a + b, 0) || 1;
+        const value = (skinValue(q[1], q[2]) * weights[0] + skinValue(q[0], q[2]) * weights[1] + skinValue(q[0], q[1]) * weights[2]) / sum;
+        const detail = attribute(10) < -50 ? 1 : 1 + (clamp(value * 2.8, .55, 1.35) - 1) * (name === 'cryptoclidus' ? .22 : .58);
+        color = [6, 7, 8].map(k => Math.pow(clamp(attribute(k) * detail, 0, 1), .72) * 255);
+      }
       pixels.set(color.map(v => clamp(Math.round(v * light), 0, 255)), at * 3);
     }
   }

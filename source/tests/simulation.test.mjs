@@ -4,14 +4,37 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
+import { createHash } from 'node:crypto';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const bundle = await build({ stdin: { contents: "export * from './jurassic/simulation.js'; export * from './jurassic/world.js'; export * from './jurassic/renderer.js'; export * from './jurassic/assets.js'; export * from './jurassic/terrain.js'; export * from './jurassic/wildlife.js'; export * from './jurassic/spatial.js';", resolveDir: root }, write: false, bundle: true, format: 'cjs', platform: 'node', target: 'es2022', loader: { '.bin': 'binary', '.jpg': 'dataurl' }, define: { __DEV__: 'false' },
+const bundle = await build({ stdin: { contents: "export * from './jurassic/simulation.js'; export * from './jurassic/world.js'; export * from './jurassic/renderer.js'; export * from './jurassic/assets.js'; export * from './jurassic/terrain.js'; export * from './jurassic/wildlife.js'; export * from './jurassic/spatial.js';", resolveDir: root }, write: false, bundle: true, format: 'cjs', platform: 'node', target: 'es2022', loader: { '.bin': 'binary', '.jpg': 'dataurl', '.png': 'dataurl' }, define: { __DEV__: 'false' },
   plugins: [{ name: 'abyssal-math', setup(b) { b.onLoad({ filter: /[\\/]src[\\/]math\.js$/ }, ({ path: p }) => ({ contents: readFileSync(p, 'utf8') + '\nexport { Mesh, icosphere, surfaceNets, sampler3, rnd, rr, rseed, vnoise, fbm, clamp, mix, sstep };', loader: 'js' })); } }] });
 const module = { exports: {} }; new Function('module', 'exports', bundle.outputFiles[0].text)(module, module.exports);
 const { newGame, movePlayer, updateSurvival, updateCreatures, interact, eat, inspect, ground, makeCreatures, makeWorld, saveGame, loadGame, SAVE_KEY, DAY_SECONDS, CACHE, SPRING, SPECIES, FLORA, writeLightMatrix, detailedAnimals, unpackMesh, writeTransform } = module.exports;
 const { LIMIT, MAP_SPAN, WATER_SOURCES, CACHES, LANDMARKS, REGIONS, regionAt, coastHeight, nearestWater, indexColliders, nearby, groundCreature, gaitStep } = module.exports;
 let cachedWorld; const testWorld = () => cachedWorld ||= makeWorld();
+test('revised animal anatomy is finite, rigged and assigned the embedded skin material', () => {
+  const meshes = detailedAnimals();
+  for (const [species, key] of [[1, 'allo'], [2, 'crypto'], [4, 'diplo'], [5, 'cerato']]) {
+    const { vertices, indices } = meshes[key], joints = new Set();
+    assert.equal(SPECIES[species].material, 3);
+    for (let i = 0; i < vertices.length; i += 16) {
+      for (let k = 0; k < 16; k++) assert.ok(Number.isFinite(vertices[i + k]), `${key} attribute ${i + k}`);
+      assert.ok(vertices[i + 15] >= 0 && vertices[i + 15] <= 1); joints.add(vertices[i + 9]);
+      if (vertices[i + 10] === -99 && vertices[i + 2] < (key === 'diplo' ? -9 : -2)) assert.ok(vertices[i + 9] >= 15, `${key} detached facial feature`);
+    }
+    assert.ok(joints.has(15)); if (key !== 'diplo') assert.ok(joints.has(16));
+    for (const index of indices) assert.ok(index < vertices.length / 16);
+    if (key === 'crypto') for (const joint of [6, 7, 8, 9]) assert.ok(joints.has(joint), 'four independently rigged flippers');
+    else for (const joint of [10, 12, 14]) assert.ok(joints.has(joint));
+  }
+});
+test('bundled internet skin matches its recorded CC0 source checksum', () => {
+  const manifest = JSON.parse(readFileSync(path.join(root, 'assets/appearance-sources.json'), 'utf8'));
+  assert.equal(manifest.texture.license, 'CC0-1.0');
+  assert.equal(createHash('sha256').update(readFileSync(path.join(root, 'assets/reptile-skin.png'))).digest('hex'), manifest.texture.sha256);
+  assert.equal(module.exports.animalTextures.length, 4); assert.match(module.exports.animalTextures[3][0], /^data:image\/png;base64,/);
+});
 const tick = (game, input, seconds) => { for (let t = 0; t < seconds; t += 1 / 60) movePlayer(game, input, 1 / 60, []); };
 
 test('walking stays above terrain and jumping returns to the ground', () => {

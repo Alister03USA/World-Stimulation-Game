@@ -30,3 +30,9 @@ For the wildlife milestone, release and development builds loaded in Chromium wi
 - Two animals use detailed imported models; four use authored sculpted meshes. Body alignment, distance-driven gait and lower-limb height corrections remain procedural rather than complete skeletal animation or inverse kinematics. Wildlife uses local steering and finite-state behavior without a global navigation mesh or complete ecosystem. Tight obstacles may stall an animal; feet and large bodies can still slide or intersect uneven terrain and vegetation.
 - Creature positions reset on reload. Player progress persists locally when browser storage is available.
 - The coast is bounded. Crafting, shelters, weapons, multiplayer, and streamed terrain remain outside this milestone.
+
+## Four-animal appearance update
+
+Both release and development builds succeed; all 39 regression tests pass. Added checks validate every revised mesh attribute/index, material assignment, facial-joint attachment, four distinct flipper joints, and the bundled CC0 skin checksum. The four baked meshes contain 25,772 / 31,612 / 21,952 / 14,248 triangles (Allosaurus / Ceratosaurus / Diplodocus / Cryptoclidus). All six regenerated portrait images decode at 640×400.
+
+The four updated portraits were visually inspected together. Diplodocus tail-tip gaps found in the voxel bake were corrected with a continuous swept taper. Chromium WebGPU compiled the revised material/deformation shaders without reported GPU errors. Targeted development viewpoints showed Ceratosaurus on land and Cryptoclidus swimming underwater; the journal showed all six loaded animal portraits. Release startup and journal rendering were checked separately. These checks do not establish photorealism, exact fossil skin/color accuracy, full skeletal animation, device performance or a complete survival playthrough.

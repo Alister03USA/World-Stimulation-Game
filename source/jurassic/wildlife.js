@@ -153,6 +153,7 @@ export function updateWildlife(game, creatures, dt, colliders = []) {
     }
     steer(c, target, speed, dt, local, neighbors);
     c.gaitStrength = blend(c.gaitStrength || 0, Math.min(1, c.speed / .45), 7, dt);
+    if (c.role === 'hunter' || aquatic) head = c.state === 'Attacking' ? .9 : c.state === 'Chasing' ? .28 : .035;
     c.headPose = blend(c.headPose, head, 1.8, dt);
     if (aquatic) { c.y = blend(c.y, Math.max(ground(c.x, c.z) + 2, -4.5 + Math.sin(game.clock * .2 + c.phase) * .7), 1.2, dt); c.roll = blend(c.roll || 0, clamp(difference(angleTo(target.x - c.x, target.z - c.z), c.yaw) * -.12, -.15, .15), 2, dt); }
     else groundCreature(c, dt);

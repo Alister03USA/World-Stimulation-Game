@@ -61,6 +61,7 @@ struct Input {
 struct Deformed { p: vec3f, n: vec3f };
 fn rotateX(p: vec3f, a: f32) -> vec3f { return vec3f(p.x, p.y * cos(a) - p.z * sin(a), p.y * sin(a) + p.z * cos(a)); }
 fn rotateY(p: vec3f, a: f32) -> vec3f { return vec3f(p.x * cos(a) + p.z * sin(a), p.y, -p.x * sin(a) + p.z * cos(a)); }
+fn rotateZ(p: vec3f, a: f32) -> vec3f { return vec3f(p.x * cos(a) - p.y * sin(a), p.x * sin(a) + p.y * cos(a), p.z); }
 fn deform(i: Input) -> Deformed {
   var p = i.p; var normal = i.n; let moving = min(i.params.y, 1.);
   if (i.joint >= 10. && i.joint <= 13.) {
@@ -71,12 +72,21 @@ fn deform(i: Input) -> Deformed {
     let contacts = select(i.contact0, i.contact1, leg >= 2); let contact = (leg % 2) * 2;
     p.x += contacts[contact] * i.weight; p.z += (slide + contacts[contact + 1]) * i.weight; p.y += (sin(swing * PI) * i.motion.w * moving + i.feet[leg]) * i.weight;
   }
-  if (i.joint == 14. || i.joint == 15.) {
-    let angle = sin(g.camera.w * select(.56, .25, i.joint == 15.) + i.params.x + p.z * .12) * select(.065, .025, i.joint == 15.);
-    p = mix(p, i.pivot + rotateY(p - i.pivot, angle), i.weight); normal = normalize(mix(normal, rotateY(normal, angle), i.weight));
-    if (i.joint == 15.) { let dip = i.motion.y * select(.32, .12, i.params.z == 4.); p = mix(p, i.pivot + rotateX(p - i.pivot, -dip), i.weight); normal = normalize(mix(normal, rotateX(normal, -dip), i.weight)); }
+  if (i.joint == 16.) {
+    let hinge = select(vec3f(0., 2.74, -2.02), vec3f(0., .13, -2.77), i.params.z == 3.);
+    let jawHinge = vec3f(hinge.xy, select(hinge.z, hinge.z * .88, i.params.z == 6.));
+    let angle = -.24 * i.motion.y; p = jawHinge + rotateX(p - jawHinge, angle); normal = rotateX(normal, angle);
   }
-  if (i.joint == 6. || i.joint == 7.) { let a = sin(i.motion.x + select(0., .3, i.joint == 7.)); p.y += a * abs(p.x) * .23; }
+  if (i.joint == 14. || i.joint == 15. || i.joint == 16.) {
+    let angle = sin(g.camera.w * select(.56, .25, i.joint >= 15.) + i.params.x + p.z * .12) * select(.065, .025, i.joint >= 15.);
+    p = mix(p, i.pivot + rotateY(p - i.pivot, angle), i.weight); normal = normalize(mix(normal, rotateY(normal, angle), i.weight));
+    if (i.joint >= 15.) { let dip = i.motion.y * select(select(.32, .12, i.params.z == 4.), .035, i.params.z == 2. || i.params.z == 3. || i.params.z == 6.); p = mix(p, i.pivot + rotateX(p - i.pivot, -dip), i.weight); normal = normalize(mix(normal, rotateX(normal, -dip), i.weight)); }
+  }
+  if (i.joint >= 6. && i.joint <= 9.) {
+    let side = select(1., -1., i.joint == 7. || i.joint == 9.); let stroke = i.motion.x + select(0., .3, i.joint >= 8.);
+    let angle = sin(stroke) * .38 * side; let twist = cos(stroke) * .14;
+    p = i.pivot + rotateZ(rotateX(p - i.pivot, twist * i.weight), angle); normal = rotateZ(rotateX(normal, twist * i.weight), angle);
+  }
   if (i.joint == 30.) {
     let wind = sin(g.camera.w * .75 + i.d.x * .055 + i.d.z * .08) + .35 * sin(g.camera.w * 1.7 + p.x * .4);
     p.x += wind * min(p.y, 25.) * .012; p.z += sin(g.camera.w * .6 + i.d.x * .04) * p.y * .006;
@@ -86,12 +96,12 @@ fn deform(i: Input) -> Deformed {
 }
 struct Output {
   @builtin(position) position: vec4f, @location(0) world: vec3f, @location(1) normal: vec3f, @location(2) color: vec3f,
-  @location(3) uv: vec2f, @location(4) local: vec3f, @location(5) @interpolate(flat) material: vec3f
+  @location(3) uv: vec2f, @location(4) local: vec3f, @location(5) @interpolate(flat) material: vec3f, @location(6) localNormal: vec3f
 };
 @vertex fn vs(i: Input) -> Output {
   let d = deform(i); let m = mat4x4f(i.a, i.b, i.c, i.d); let wp = m * vec4f(d.p, 1.);
   var o: Output; o.position = g.vp * wp; o.world = wp.xyz; o.normal = normalize((m * vec4f(d.n, 0.)).xyz);
-  o.color = i.color; o.uv = i.uv; o.local = d.p; o.material = vec3f(i.params.w, i.params.z, select(0., 1., i.joint == 30.)); return o;
+  o.color = i.color; o.uv = i.uv; o.local = i.p; o.localNormal = i.n; o.material = vec3f(i.params.w, i.params.z, select(0., 1., i.joint == 30.)); return o;
 }
 @vertex fn vsShadow(i: Input) -> @builtin(position) vec4f { let d = deform(i); return g.lightVP * mat4x4f(i.a, i.b, i.c, i.d) * vec4f(d.p, 1.); }
 fn fresnel(f0: vec3f, cosine: f32) -> vec3f { return f0 + (1. - f0) * pow(1. - cosine, 5.); }
@@ -102,7 +112,13 @@ fn fresnel(f0: vec3f, cosine: f32) -> vec3f { return f0 + (1. - f0) * pow(1. - c
   let orm = textureSample(ormMap, surfaceSampler, i.uv, layer).rgb;
   var normal = normalize(i.normal) * select(-1., 1., front); var albedo = i.color; var roughness = .85; var ao = 1.;
   let dp1 = dpdx(i.world); let dp2 = dpdy(i.world); let duv1 = dpdx(i.uv); let duv2 = dpdy(i.uv);
-  if (layer > 0) {
+  let frequency = select(select(1.6, 1., species == 5.), 2.8, species == 3.); let q = i.local * frequency; let qx = dpdx(q); let qy = dpdy(q);
+  if (layer == 3) {
+    let weights0 = pow(abs(normalize(i.localNormal)), vec3f(4.)); let weights = weights0 / max(dot(weights0, vec3f(1.)), .001);
+    let skin = textureSampleGrad(albedoMap, surfaceSampler, q.yz, 3, qx.yz, qy.yz).rgb * weights.x + textureSampleGrad(albedoMap, surfaceSampler, q.xz, 3, qx.xz, qy.xz).rgb * weights.y + textureSampleGrad(albedoMap, surfaceSampler, q.xy, 3, qx.xy, qy.xy).rgb * weights.z;
+    let detail = clamp(dot(skin, vec3f(.2126, .7152, .0722)) * 2.8, .55, 1.35); let mask = select(1., 0., i.uv.x < -50.);
+    albedo *= mix(1., mix(1., detail, select(.58, .22, species == 3.)), mask); roughness = select(.77, .53, species == 3.);
+  } else if (layer > 0) {
     let tangent = dp1 * duv2.y - dp2 * duv1.y; let bitangent = dp2 * duv1.x - dp1 * duv2.x;
     if (dot(tangent, tangent) > 1e-12 && dot(bitangent, bitangent) > 1e-12) {
       let t = normalize(tangent); let b = normalize(bitangent); normal = normalize(t * packedNormal.x * .7 + b * packedNormal.y * .7 + normal * packedNormal.z);

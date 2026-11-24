@@ -10,6 +10,7 @@ import stegoOrm from '../assets/stegosaurus-orm.jpg';
 import brachioColor from '../assets/brachiosaurus-color.jpg';
 import brachioNormal from '../assets/brachiosaurus-normal.jpg';
 import brachioOrm from '../assets/brachiosaurus-orm.jpg';
+import reptileSkin from '../assets/reptile-skin.png';
 
 export function unpackMesh(bytes) {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -20,4 +21,4 @@ export function unpackMesh(bytes) {
   return { vertices: new Float32Array(bytes.slice(16, end).buffer), indices: new Uint32Array(bytes.slice(end).buffer) };
 }
 export const detailedAnimals = () => ({ stego: unpackMesh(stegosaurus), brachio: unpackMesh(brachiosaurus), allo: unpackMesh(allosaurus), cerato: unpackMesh(ceratosaurus), diplo: unpackMesh(diplodocus), crypto: unpackMesh(cryptoclidus) });
-export const animalTextures = [null, [stegoColor, stegoNormal, stegoOrm], [brachioColor, brachioNormal, brachioOrm]];
+export const animalTextures = [null, [stegoColor, stegoNormal, stegoOrm], [brachioColor, brachioNormal, brachioOrm], [reptileSkin, null, null]];
