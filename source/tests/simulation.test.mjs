@@ -7,7 +7,7 @@ import { build } from 'esbuild';
 import { createHash } from 'node:crypto';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const bundle = await build({ stdin: { contents: "export * from './jurassic/simulation.js'; export * from './jurassic/world.js'; export * from './jurassic/renderer.js'; export * from './jurassic/assets.js'; export * from './jurassic/terrain.js'; export * from './jurassic/wildlife.js'; export * from './jurassic/spatial.js'; export * from './jurassic/habitat.js'; export * from './jurassic/landscape.js';", resolveDir: root }, write: false, bundle: true, format: 'cjs', platform: 'node', target: 'es2022', loader: { '.bin': 'binary', '.jpg': 'dataurl', '.png': 'dataurl' }, define: { __DEV__: 'false' },
+const bundle = await build({ stdin: { contents: "export * from './jurassic/simulation.js'; export * from './jurassic/world.js'; export * from './jurassic/renderer.js'; export * from './jurassic/assets.js'; export * from './jurassic/terrain.js'; export * from './jurassic/wildlife.js'; export * from './jurassic/spatial.js'; export * from './jurassic/habitat.js'; export * from './jurassic/landscape.js'; export * from './jurassic/camping.js'; export * from './jurassic/adventure-world.js';", resolveDir: root }, write: false, bundle: true, format: 'cjs', platform: 'node', target: 'es2022', loader: { '.bin': 'binary', '.jpg': 'dataurl', '.png': 'dataurl' }, define: { __DEV__: 'false' },
   plugins: [{ name: 'abyssal-math', setup(b) { b.onLoad({ filter: /[\\/]src[\\/]math\.js$/ }, ({ path: p }) => ({ contents: readFileSync(p, 'utf8') + '\nexport { Mesh, icosphere, surfaceNets, sampler3, rnd, rr, rseed, vnoise, fbm, clamp, mix, sstep };', loader: 'js' })); } }] });
 const module = { exports: {} }; new Function('module', 'exports', bundle.outputFiles[0].text)(module, module.exports);
 const { newGame, movePlayer, updateSurvival, updateCreatures, interact, eat, inspect, ground, makeCreatures, makeWorld, saveGame, loadGame, SAVE_KEY, DAY_SECONDS, CACHE, SPRING, SPECIES, FLORA, writeLightMatrix, detailedAnimals, unpackMesh, writeTransform } = module.exports;
@@ -349,4 +349,137 @@ test('shared forest habitat respects shoreline and slope and is deterministic', 
   assert.ok(forestHabitat(-205, 290, 3).moisture > forestHabitat(0, 80, 15).moisture);
   assert.equal(detailHash(-122, 65, 7), detailHash(-122, 65, 7));
   for (let i = 0; i < 100; i++) { const n = detailHash(i, -i, 4); assert.ok(n >= 0 && n < 1); }
+});
+
+const camp = module.exports;
+const campWorld = () => ({ ...testWorld(), colliders: testWorld().adventure.staticColliders });
+function aim(g, point, distance = 2.5) {
+  Object.assign(g.player, { x: point.x, z: point.z + distance, y: ground(point.x, point.z + distance) + 1.7, yaw: 0, swimming: false, climb: null });
+  g.player.pitch = Math.atan2(point.y - g.player.y, distance);
+}
+function stocked() { const g = newGame(); Object.assign(g.inventory, { wood: 40, stone: 30, fiber: 40, provisions: 2 }); return g; }
+function findSite(g, w, type = 'tent') {
+  const origin = g.camp.tent || { x: 54, z: 52 };
+  for (let r = 0; r < (type === 'tent' ? 90 : 12); r += 1.5) for (let j = 0; j < 24; j++) {
+    const a = j * Math.PI / 12, s = camp.candidateAt(type, origin.x + Math.sin(a) * r, origin.z + Math.cos(a) * r, 0);
+    if (!camp.placementCheck(g, w, s)) return s;
+  }
+  throw Error('No suitable ' + type + ' site');
+}
+function buildAt(g, w, site) {
+  Object.assign(g.player, { x: site.x, z: site.z + 4, y: ground(site.x, site.z + 4) + 1.7, yaw: 0, swimming: false });
+  g.placement = { type: site.type, yaw: site.yaw, distance: 4 }; return camp.placeStructure(g, w);
+}
+function faceCamp(g, type) { const t = camp.campTarget(g, type); aim(g, t, 2); }
+test('starter resources are finite, unique, accessible on land, and sufficient for the campsite loop', () => {
+  const w = campWorld(), nodes = w.adventure.nodes.filter(n => n.id.startsWith('starter-'));
+  assert.equal(nodes.length, 24); assert.equal(new Set(w.adventure.nodes.map(n => n.id)).size, w.adventure.nodes.length);
+  for (const n of nodes) { assert.ok(Math.hypot(n.x - 56, n.z - 32) < 40); assert.ok(ground(n.x, n.z) > .8); }
+  for (const item of ['wood', 'stone', 'fiber']) assert.ok(nodes.filter(n => n.item === item).reduce((a, n) => a + n.yield, 0) >= 20);
+  assert.ok(w.adventure.climbs.length > 5);
+});
+test('gathering uses the same target as the prompt and cannot repeat, collect remotely or overfill', () => {
+  const w = campWorld(), g = newGame(), n = w.adventure.nodes.find(n => n.id === 'starter-0'); aim(g, { ...n, y: n.y + .25 });
+  assert.equal(camp.resolveTarget(g, w)?.id, n.id); assert.equal(camp.useTarget(g, w).ok, true); assert.equal(g.inventory.wood, n.yield);
+  assert.equal(camp.gather(g, w, n).ok, false); assert.equal(g.inventory.wood, n.yield);
+  const other = w.adventure.nodes.find(o => o.item === 'wood' && o.id !== n.id); assert.equal(camp.gather(g, w, other).ok, false);
+  g.depleted = []; g.inventory.wood = 39; assert.equal(camp.gather(g, w, n).ok, false); assert.equal(g.depleted.length, 0);
+});
+test('recipes are atomic, tools cannot be crafted twice, and timber requires the equipped hatchet', () => {
+  const w = campWorld(), g = newGame(); assert.equal(camp.craft(g, 'hatchet').ok, false); assert.equal(g.inventory.wood, 0);
+  Object.assign(g.inventory, { wood: 4, stone: 3, fiber: 2 }); assert.equal(camp.craft(g, 'hatchet').ok, true); assert.deepEqual([g.inventory.wood, g.inventory.stone, g.inventory.fiber], [2, 1, 1]);
+  assert.equal(camp.craft(g, 'hatchet').ok, false); assert.equal(g.inventory.wood, 2);
+  const n = w.adventure.nodes.find(n => n.requires); aim(g, { ...n, y: n.y + .25 });
+  assert.equal(camp.gather(g, w, n).ok, false); const out = camp.useTool(g, w, []); assert.equal(out.ok, true, out.message); assert.equal(g.inventory.wood, 8);
+});
+test('construction rejects invalid locations without charging and creates bounded dynamic colliders', () => {
+  const w = campWorld(), g = stocked(); const original = { ...g.inventory }, staticCount = w.colliders.length;
+  assert.match(camp.placementCheck(g, w, camp.candidateAt('tent', 130, 30)), /water|dry/);
+  assert.ok(camp.placementCheck(g, w, camp.candidateAt('tent', CACHE.x, CACHE.z)));
+  assert.ok(camp.placementCheck(g, w, camp.candidateAt('chest', 54, 52))); assert.deepEqual(g.inventory, original);
+  const site = findSite(g, w), out = buildAt(g, w, site); assert.equal(out.ok, true, out.message); assert.equal(g.inventory.wood, 32); assert.equal(g.inventory.fiber, 32); assert.ok(w.colliders.length > staticCount);
+  const blocked = camp.placementCheck(g, w, site); assert.ok(blocked); assert.equal(g.inventory.wood, 32);
+  const fire = findSite(g, w, 'fire'); assert.ok(Math.hypot(fire.x - site.x, fire.z - site.z) >= 3); assert.equal(buildAt(g, w, fire).ok, true);
+  assert.ok(w.colliders.filter(c => c.owner === 'fire').every(c => c.top - c.bottom < 2));
+});
+test('storage conserves every item and packing cannot discard stored items or overflow refunds', () => {
+  const w = campWorld(), g = stocked(); assert.equal(buildAt(g, w, findSite(g, w)).ok, true); assert.equal(buildAt(g, w, findSite(g, w, 'chest')).ok, true); faceCamp(g, 'chest');
+  const wood = g.inventory.wood; assert.equal(camp.campAction(g, w, 'chest', 'deposit', 'wood', 5).ok, true); assert.equal(g.inventory.wood + g.camp.chest.storage.wood, wood);
+  assert.equal(camp.campAction(g, w, 'chest', 'pack').ok, false); assert.equal(camp.campAction(g, w, 'chest', 'withdraw', 'wood', 6).ok, false);
+  assert.equal(camp.campAction(g, w, 'chest', 'withdraw', 'wood', 5).ok, true); g.inventory.wood = 40; assert.equal(camp.campAction(g, w, 'chest', 'pack').ok, false);
+  g.inventory.wood = 20; assert.equal(camp.campAction(g, w, 'chest', 'pack').ok, true); assert.equal(g.inventory.wood, 26); assert.equal(g.camp.chest, undefined);
+});
+test('fire cooking consumes one provision, follows simulation time and preserves a full output slot', () => {
+  const w = campWorld(), g = stocked(); buildAt(g, w, findSite(g, w)); buildAt(g, w, findSite(g, w, 'fire')); faceCamp(g, 'fire');
+  const act = action => camp.campAction(g, w, 'fire', action);
+  assert.equal(act('cook').ok, false); assert.equal(act('fuel').ok, true); assert.equal(g.camp.fire.fuel, 60); act('light'); assert.equal(act('cook').ok, true); assert.equal(g.inventory.provisions, 1);
+  assert.equal(act('cook').ok, false); assert.equal(act('pack').ok, false);
+  camp.stepAdventure(g, {}, 4, w); assert.equal(g.camp.fire.cooking, 6); assert.equal(g.camp.fire.fuel, 56);
+  camp.stepAdventure(g, {}, 6, w); assert.equal(g.camp.fire.ready, true); assert.equal(g.camp.fire.cooking, 0); assert.equal(g.camp.fire.fuel, 50);
+  g.inventory.meals = 10; assert.equal(act('collect').ok, false); assert.equal(g.camp.fire.ready, true); g.inventory.meals = 0; assert.equal(act('collect').ok, true); assert.equal(g.inventory.meals, 1);
+  g.hunger = 20; assert.equal(camp.eatMeal(g).ok, true); assert.equal(g.hunger, 75); assert.equal(g.inventory.meals, 0);
+});
+test('tent rest doubles idle stamina recovery without pausing survival or preventing damage', () => {
+  const w = campWorld(), g = stocked(); buildAt(g, w, findSite(g, w)); faceCamp(g, 'tent'); g.stamina = 10;
+  assert.equal(camp.campAction(g, w, 'tent', 'rest').ok, true); const hunger = g.hunger;
+  camp.stepAdventure(g, {}, .1, w); movePlayer(g, {}, .1, w.colliders); updateSurvival(g, .1); assert.ok(Math.abs(g.stamina - 12) < .001); assert.ok(g.hunger < hunger); assert.ok(g.elapsed > 0);
+  camp.stepAdventure(g, { forward: 1 }, .1, w); assert.equal(g.resting, false);
+});
+test('spear defense costs stamina, interrupts bites, respects cooldown and does not create kills', () => {
+  const w = campWorld(), g = newGame(); g.tools.spear = true; g.equipped = 'spear';
+  const c = makeCreatures().find(c => c.role === 'hunter'); Object.assign(c, { x: g.player.x, z: g.player.z - 2, y: ground(g.player.x, g.player.z), attackWindup: .5 }); g.player.yaw = 0; g.player.pitch = 0;
+  assert.equal(camp.useTool(g, w, [c]).ok, true); assert.equal(g.stamina, 80); assert.equal(c.attackWindup, 0); assert.equal(c.defendUntil, 2); assert.equal(c.resistUntil, 8); assert.equal(c.health, undefined);
+  assert.equal(camp.useTool(g, w, [c]).ok, false); g.elapsed = 2; camp.useTool(g, w, [c]); assert.equal(c.defendUntil, 2); assert.equal(g.stamina, 60);
+  g.stamina = 19; g.elapsed = 4; assert.equal(camp.useTool(g, w, [c]).ok, false); assert.equal(g.stamina, 19);
+});
+test('climbing uses a bounded route, forces descent on exhaustion and permits safe perch recovery', () => {
+  const w = campWorld(), g = newGame(), tree = w.adventure.climbs[0]; aim(g, { ...tree, y: tree.y + 1.4 }, 1.8);
+  assert.equal(camp.resolveTarget(g, w)?.kind, 'climb'); assert.equal(camp.useTarget(g, w).ok, true); g.stamina = 8;
+  camp.stepAdventure(g, { forward: 1 }, 1, w); assert.equal(g.stamina, 0); assert.equal(g.player.climb.height, 1.5);
+  camp.stepAdventure(g, { forward: 1 }, 1, w); assert.equal(g.player.climb, null); assert.ok(Math.abs(g.player.y - ground(tree.x, tree.z) - 1.7) < .001);
+  g.player.climb = { id: tree.id, height: 6, descending: false, entry: { x: tree.x, z: tree.z } }; g.stamina = 10; camp.stepAdventure(g, {}, 1, w); assert.equal(g.stamina, 20); assert.equal(g.campTasks.climbed, true);
+  assert.equal(camp.beginPlacement(g, 'tent').ok, false); assert.equal(camp.useTool(g, w, []).ok, false);
+});
+test('version two saves preserve depleted nodes, storage and cooking; old saves migrate and climbs resume at ground', () => {
+  const memory = new Map(), storage = { setItem: (k, v) => memory.set(k, v), getItem: k => memory.get(k) }, w = campWorld(), g = stocked();
+  buildAt(g, w, findSite(g, w)); buildAt(g, w, findSite(g, w, 'fire')); faceCamp(g, 'fire'); camp.campAction(g, w, 'fire', 'fuel'); camp.campAction(g, w, 'fire', 'light'); camp.campAction(g, w, 'fire', 'cook'); camp.stepAdventure(g, {}, 4, w);
+  g.depleted = ['starter-0']; saveGame(g, storage); const loaded = loadGame(storage, w); assert.ok(loaded); assert.deepEqual(loaded.depleted, g.depleted); assert.equal(loaded.camp.fire.cooking, 6); assert.equal(loaded.camp.fire.fuel, 56);
+  const old = { ...newGame(), version: 1, elapsed: 30, discovered: [1, 2] }; delete old.inventory; delete old.camp; memory.set(SAVE_KEY, JSON.stringify(old)); const migrated = loadGame(storage, w); assert.equal(migrated.elapsed, 30); assert.deepEqual(migrated.discovered, [1, 2]); assert.equal(migrated.inventory.wood, 0);
+  const tree = w.adventure.climbs[0]; g.player.climb = { id: tree.id, height: 5, entry: { x: tree.x, z: tree.z } }; saveGame(g, storage); const reset = loadGame(storage, w); assert.ok(reset); assert.equal(reset.player.climb, null); assert.equal(reset.player.x, tree.x); assert.equal(reset.player.y, ground(tree.x, tree.z) + 1.7);
+  g.inventory.wood = -1; saveGame(g, storage); assert.equal(loadGame(storage, w), null);
+});
+test('held tools stay ahead and to the right at every player heading', () => {
+  const w = campWorld(), g = newGame(); g.equipped = 'spear'; g.tools.spear = true;
+  for (const yaw of [-2.7, -.9, 0, .9, 2.7]) {
+    g.player.yaw = yaw; camp.syncAdventure(g, w); const tool = w.adventure.tools.spear, dx = tool.x - g.player.x, dz = tool.z - g.player.z;
+    assert.ok(tool.active); assert.ok(Math.abs(dx * Math.sin(yaw) - dz * Math.cos(yaw) - .47) < .001); assert.ok(Math.abs(dx * Math.cos(yaw) + dz * Math.sin(yaw) - .32) < .001);
+    const matrix = new Float32Array(36); writeTransform(matrix, 0, tool); const fx = -matrix[8], fz = -matrix[10]; assert.ok(fx * Math.sin(yaw) - fz * Math.cos(yaw) > .7);
+  }
+});
+test('new expeditions clear campsite instances, previews, depletion and dynamic collisions', () => {
+  const w = campWorld(), g = stocked(); buildAt(g, w, findSite(g, w)); g.depleted = ['starter-0']; camp.syncAdventure(g, w); assert.ok(w.adventure.built.tent.active);
+  const fresh = newGame(); camp.rebuildCampColliders(fresh, w); camp.syncAdventure(fresh, w); assert.equal(w.colliders.length, w.adventure.staticColliders.length);
+  assert.ok(w.adventure.reserved.every(o => o.active === false)); assert.ok(w.adventure.resourceObjects.every(o => o.active)); assert.equal(fresh.camp.fire, undefined);
+});
+test('obstructions and finished expeditions block gathering, tools and cooking advancement', () => {
+  const w = campWorld(), g = newGame(), n = w.adventure.nodes[0]; aim(g, { ...n, y: n.y + .25 });
+  const wall = { x: (g.player.x + n.x) / 2, z: (g.player.z + n.z) / 2, radius: .8, bottom: -50, top: 200 }; w.colliders = indexColliders([wall]);
+  assert.equal(camp.gather(g, w, n).ok, false); assert.equal(g.inventory.wood, 0);
+  g.dead = true; g.camp.fire = { fuel: 60, burning: true, cooking: 10 }; camp.stepAdventure(g, {}, 5, w); assert.equal(g.camp.fire.fuel, 60); assert.equal(g.camp.fire.cooking, 10); assert.equal(camp.useTool(g, w, []).ok, false);
+});
+
+test('chest capacity is exactly one hundred units and rejected transfers conserve supplies', () => {
+  const w = campWorld(), g = stocked(); buildAt(g, w, findSite(g, w)); buildAt(g, w, findSite(g, w, 'chest')); faceCamp(g, 'chest');
+  g.rations = 101; assert.equal(camp.campAction(g, w, 'chest', 'deposit', 'rations', 100).ok, true); assert.equal(g.rations, 1);
+  assert.equal(camp.campAction(g, w, 'chest', 'deposit', 'rations', 1).ok, false); assert.equal(g.camp.chest.storage.rations, 100); assert.equal(g.rations, 1);
+  assert.equal(camp.campAction(g, w, 'chest', 'withdraw', 'rations', 100).ok, true); assert.equal(g.rations, 101); assert.equal(g.camp.chest.storage.rations, 0);
+});
+
+test('land predators cannot bite an unreachable perch and marine animals retain their normal behavior', () => {
+  const g = newGame(), c = makeCreatures().find(c => c.role === 'hunter'); g.player.climb = { height: 6 }; g.player.y += 6;
+  Object.assign(c, { x: g.player.x, z: g.player.z - 2, attackWindup: .5 }); const health = g.health;
+  for (let i = 0; i < 120; i++) updateCreatures(g, [c], 1 / 60, []);
+  assert.equal(c.state, 'Watching'); assert.equal(c.attackWindup, 0); assert.equal(g.health, health);
+  const marine = makeCreatures().find(c => c.role === 'marine'); g.player.x = marine.x; g.player.z = marine.z;
+  updateCreatures(g, [marine], .1, []); assert.notEqual(marine.state, 'Watching');
 });

@@ -9,6 +9,7 @@ export { ground, terrainHeight, heights } from './terrain.js';
 import { makeConifer, makeFern, makeCycad, makeGinkgo, makeHorsetail } from './plants.js';
 import { forestHabitat, detailHash, FOREST_GROVES } from './habitat.js';
 import { dressLandscape } from './landscape.js';
+import { addAdventureWorld } from './adventure-world.js';
 
 export const SPECIES = [
   { name: 'Stegosaurus', mesh: 'stego', role: 'browser', kind: 'Herbivore', material: 1, radius: 5.5, viewHeight: 2, detail: 'A Late Jurassic plated browser with a small head and four tail spikes. Keep clear of its tail.', color: '#c7d59b' },
@@ -120,7 +121,8 @@ export function makeWorld() {
   const lookup = new Map(objects.map(o => [`${o.x},${o.z}`, o])), modelHeights = { tree: 25, coniferBroad: 25, ginkgo: 20, treefern: 5 }, bounds = {};
   for (const name of ['rock', 'spire']) { let radius = 0, top = 0; const v = meshes[name].vertices; for (let i = 0; i < v.length; i += 16) { radius = Math.max(radius, Math.hypot(v[i], v[i + 2])); top = Math.max(top, v[i + 1]); } bounds[name] = { radius, top }; }
   for (const c of colliders) { if (Number.isFinite(c.top) && Number.isFinite(c.bottom)) continue; const o = lookup.get(`${c.x},${c.z}`), bound = o && bounds[o.mesh], scale = o?.scale || 1; if (bound) c.radius = bound.radius * scale; c.bottom = ground(c.x, c.z) - .6; c.top = ground(c.x, c.z) + (o ? (bound?.top || modelHeights[o.mesh] || 14) * scale : 14); }
-  return { meshes, objects, colliders: indexColliders(colliders), springY };
+  const world = { meshes, objects, colliders: indexColliders(colliders), springY };
+  addAdventureWorld(world, [...clearings, ...regionalClearings], routes); return world;
 }
 
 export function makeCreatures() {

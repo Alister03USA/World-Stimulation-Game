@@ -1,9 +1,10 @@
 import { ground, LIMIT, SPAWN, WATER_SOURCES, CACHES, DAY_SECONDS, SPECIES } from './world.js';
 import { clamp } from '../src/math.js';
+import { adventureState, restoreAdventure, useSupply } from './camping.js';
 
 export const SAVE_KEY = typeof __DEV__ !== 'undefined' && __DEV__ ? 'world-stimulation-jurassic-dev-v1' : 'world-stimulation-jurassic-v1';
 export function newGame() {
-  return { player: { x: SPAWN.x, y: ground(SPAWN.x, SPAWN.z) + 1.7, z: SPAWN.z, yaw: SPAWN.yaw, pitch: -.06, vy: 0, grounded: true, vx: 0, vz: 0, coyote: .1, jumpBuffer: 0, jumpHeld: false, swimming: false }, health: 100, stamina: 100, hunger: 88, thirst: 82, oxygen: 100, rations: 2, elapsed: 0, clock: 80, cacheAt: -300, discovered: [], drank: false, supplied: false, won: false, dead: false, damage: 0, attackAt: -10 };
+  return { ...adventureState(), player: { x: SPAWN.x, y: ground(SPAWN.x, SPAWN.z) + 1.7, z: SPAWN.z, yaw: SPAWN.yaw, pitch: -.06, vy: 0, grounded: true, vx: 0, vz: 0, coyote: .1, jumpBuffer: 0, jumpHeld: false, swimming: false }, health: 100, stamina: 100, hunger: 88, thirst: 82, oxygen: 100, rations: 2, elapsed: 0, clock: 80, cacheAt: -300, discovered: [], drank: false, supplied: false, won: false, dead: false, damage: 0, attackAt: -10 };
 }
 
 export { movePlayer } from './movement.js';
@@ -24,14 +25,11 @@ export function interact(game) {
   const p = game.player;
   const source = WATER_SOURCES.find(s => Math.hypot(p.x - s.x, p.z - s.z) < 6 && Math.abs(p.y - ground(s.x, s.z)) < 5);
   if (source) {
-    game.thirst = 100; game.drank = true; return `${source.name}: fresh water collected. Thirst restored.`;
+    return useSupply(game, 'spring', source).message;
   }
   const cache = CACHES.find(s => Math.hypot(p.x - s.x, p.z - s.z) < 4 && Math.abs(p.y - ground(s.x, s.z)) < 4);
   if (cache) {
-    game.cacheTimes ||= {}; const last = cache.id === 'coast' ? game.cacheAt : game.cacheTimes[cache.id] ?? -300;
-    if (game.elapsed - last < 300) return 'This supply cache is empty. More provisions become available in five minutes.';
-    game.rations += 2; if (cache.id === 'coast') game.cacheAt = game.elapsed; else game.cacheTimes[cache.id] = game.elapsed;
-    game.supplied = true; return `${cache.name}: collected two rations.`;
+    return useSupply(game, 'cache', cache).message;
   }
   return 'Get closer to the freshwater spring or the shoreline supply cache.';
 }
@@ -59,12 +57,12 @@ export function inspect(game, creatures) {
 }
 
 export function saveGame(game, storage) {
-  try { (storage ?? localStorage).setItem(SAVE_KEY, JSON.stringify({ version: 1, ...game })); return true; } catch { return false; }
+  try { (storage ?? localStorage).setItem(SAVE_KEY, JSON.stringify({ ...game, version: 2 })); return true; } catch { return false; }
 }
-export function loadGame(storage) {
+export function loadGame(storage, world) {
   try {
     const data = JSON.parse((storage ?? localStorage).getItem(SAVE_KEY));
-    if (!data || data.version !== 1 || !data.player || data.dead || data.won) return null;
+    if (!data || ![1, 2].includes(data.version) || !data.player || data.dead || data.won) return null;
     const game = newGame(), numeric = ['health', 'stamina', 'hunger', 'thirst', 'oxygen', 'rations', 'elapsed', 'clock', 'cacheAt'];
     if (numeric.some(k => !Number.isFinite(data[k])) || ['x', 'y', 'z', 'yaw', 'pitch'].some(k => !Number.isFinite(data.player[k]))) return null;
     if (Math.hypot(data.player.x, data.player.z) > LIMIT + 1 || data.player.y < -70 || data.player.y > 180 || data.elapsed < 0 || data.rations < 0 || data.rations > 1000) return null;
@@ -73,6 +71,7 @@ export function loadGame(storage) {
     for (const k of ['health', 'stamina', 'hunger', 'thirst', 'oxygen']) game[k] = clamp(game[k], 0, 100);
     game.player.vy = game.player.vx = game.player.vz = 0; game.player.jumpHeld = false; game.player.jumpBuffer = 0; game.player.coyote = 0; game.player.swimming = ground(game.player.x, game.player.z) < -.95 && game.player.y < 1.15; game.player.pitch = clamp(game.player.pitch, -1.45, 1.45); game.damage = 0;
     game.player.y = Math.max(ground(game.player.x, game.player.z) + 1.7, game.player.y);
+    if (!restoreAdventure(game, data, world)) return null;
     return game;
   } catch { return null; }
 }

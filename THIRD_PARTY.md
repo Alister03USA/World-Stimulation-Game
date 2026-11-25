@@ -43,3 +43,7 @@ The habitat combines Jurassic animals from different places and times. Models, v
 ## Forest appearance references
 
 The forest detail pass adds only code-authored geometry and procedural surface patterns under MIT. No additional external artwork is bundled. Botanical context comes from the [NPS Morrison Formation](https://www.nps.gov/dino/learn/nature/morrison-formation.htm), [NHM dinosaur garden](https://www.nhm.ac.uk/discover/how-to-grow-a-dinosaur-garden.html) and [BGS plant history](https://www.bgs.ac.uk/discovering-geology/fossils-and-geological-time/plants-2/) pages. Their text and illustrations are not copied into the game. See `docs/FOREST_REFERENCES.md` for how these references inform the fictional reconstruction.
+
+## Campsite assets
+
+Resource bundles, tools, woven tent, fire, chest, climbing branches, flame/smoke geometry and crackling audio are code-authored under the project MIT license. No new external artwork or audio is bundled for this survival loop.

@@ -98,6 +98,7 @@ fn deform(i: Input) -> Deformed {
     let height = select(i.feet.y, i.feet.x, p.x >= 0.) * tx + select(i.feet.w, i.feet.z, p.z >= 0.) * tz;
     p.y += height * (1. - smoothstep(.35, .8, i.p.y));
   }
+  if (i.joint >= 48. && i.joint <= 51. && p.y < 0.) { p.y = i.feet[i32(i.joint) - 48] - .05; }
   if (i.params.z > .5) { p.x *= 1. + sin(g.camera.w * 1.05 + i.params.x) * .004; }
   var result: Deformed; result.p = p; result.n = normal; return result;
 }
@@ -183,6 +184,11 @@ fn fresnel(f0: vec3f, cosine: f32) -> vec3f { return f0 + (1. - f0) * pow(1. - c
   let radiance = vec3f(3.1, 2.87, 2.43) * day; let diffuse = albedo * (1. - f) / PI;
   let up = normal.y * .5 + .5; let ambient = mix(vec3f(.065, .060, .041), vec3f(.15, .205, .26), up) * (.10 + .90 * day);
   var color = (diffuse + specular) * radiance * nl * shadow + albedo * ambient * ao;
+  let fireVector = g.effects.xyz - i.world; let fireDistance = length(fireVector);
+  color += albedo * vec3f(3.8, 1.5, .35) * g.effects.w * max(0., dot(normal, normalize(fireVector + vec3f(0., .001, 0.)))) / (1. + fireDistance * fireDistance * .55);
+  if (i.surface == 52.) { color = vec3f(4., 1.0, .05) * (1. + sin(g.camera.w * 11. + i.local.y * 5.) * .16); }
+  if (i.surface == 53.) { color = vec3f(.18, .19, .17) * (.4 + g.sun.w * .6); if (hash(floor(i.position.xy)) > .38) { discard; } }
+  if (i.surface == 46.) { color = i.color * 1.5; if (fract((i.position.x + i.position.y) * .18) > .55) { discard; } }
   color += albedo * leaf * max(dot(-normal, light), 0.) * radiance * shadow * .09;
   if (i.world.y < 0.) {
     let p = i.world.xz * .75 + vec2f(g.camera.w * .3, sin(g.camera.w * .2)); let caustic = pow(max(0., sin(p.x + sin(p.y)) * sin(p.y + cos(p.x))), 5.);

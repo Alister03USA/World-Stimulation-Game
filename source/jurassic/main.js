@@ -1,14 +1,19 @@
 /*! World Stimulation Game. Based on Abyssal Garden by Maksymilian Dendura (MIT). */
 import { makeWorld, makeCreatures, ground, SPECIES, FLORA, WATER_SOURCES, CACHES, LANDMARKS, MAP_SPAN, regionAt, DAY_SECONDS } from './world.js';
-import { newGame, movePlayer, updateCreatures, updateSurvival, interact, eat, inspect, saveGame, loadGame, SAVE_KEY } from './simulation.js';
+import { newGame, movePlayer, updateCreatures, updateSurvival, eat, inspect, saveGame, loadGame, SAVE_KEY } from './simulation.js';
 import { makeRenderer } from './renderer.js';
 import { makeAudio } from './audio.js';
 import { portraits } from './portraits.js';
+import { resolveTarget, useTarget, useTool, equip, stepAdventure, placementSite, placementCheck, placeStructure, rebuildCampColliders } from './camping.js';
+import { syncAdventure } from './adventure-world.js';
+import { makeCampingUI } from './camping-ui.js';
 
 const $ = id => document.getElementById(id), canvas = $('world'), audio = makeAudio();
-let game = loadGame() || newGame(), creatures = makeCreatures(), world, renderer, paused = true, ready = false, fatal = false, last = 0, hudTime = 0, saveTime = 0, renderTime = 0, seen = null, toastTime = 0, frames = 0, fps = 60;
+let game = newGame(), creatures = makeCreatures(), world, renderer, paused = true, ready = false, fatal = false, last = 0, hudTime = 0, saveTime = 0, renderTime = 0, seen = null, toastTime = 0, frames = 0, fps = 60;
 const input = {}, coarse = matchMedia('(pointer:coarse)').matches;
 let lookPointer = null, movePointer = null, moveOrigin = null, lastLook = null, touchForward = 0, touchStrafe = 0;
+const campUI = makeCampingUI({ game: () => game, world: () => world, pause: () => setPause(true), resume: () => setPause(false), notify: toast, save: () => saveGame(game) });
+function action(out) { if (out.message) toast(out.message); if (out.ok) { saveGame(game); syncAdventure(game, world); } if (out.panel) campUI.open(out.panel); updateHUD(); }
 
 function toast(text) { $('toast').textContent = text; $('toast').classList.add('visible'); toastTime = 4; }
 function fail(message) {
@@ -19,7 +24,7 @@ function fail(message) {
 function setPause(value) {
   if (!ready || fatal) return;
   paused = value; document.body.classList.toggle('playing', !value); $('menu').hidden = !value; $('hud').inert = value;
-  if (!value) { $('atlas').hidden = true; $('guide').hidden = true; }
+  if (!value) { $('atlas').hidden = true; $('guide').hidden = true; campUI.close(false); }
   if (value) {
     $('toast').classList.remove('visible');
     clearInput(); if (document.pointerLockElement) document.exitPointerLock();
@@ -28,7 +33,7 @@ function setPause(value) {
     $('enter').focus();
   } else {
     audio.start();
-    if (!coarse && document.pointerLockElement !== canvas) {
+    if (!__DEV__ && !coarse && document.pointerLockElement !== canvas) {
       try { const request = canvas.requestPointerLock(); request?.catch(() => toast('Drag across the world to look around.')); } catch { toast('Drag across the world to look around.'); }
     }
   }
@@ -37,6 +42,7 @@ function setPause(value) {
 function clearInput() { for (const k of Object.keys(input)) input[k] = 0; game.player.vx = game.player.vz = 0; touchForward = touchStrafe = 0; movePointer = lookPointer = null; moveOrigin = lastLook = null; $('stick-knob').style.transform = ''; }
 function restart() {
   game = newGame();
+  campUI.close(false); rebuildCampColliders(game, world); syncAdventure(game, world);
   // Preserve the objects held by the renderer's instance groups when starting again.
   makeCreatures().forEach((fresh, i) => Object.assign(creatures[i], fresh));
   try { localStorage.removeItem(SAVE_KEY); } catch {}
@@ -44,13 +50,19 @@ function restart() {
 }
 
 function keyAction(code) {
+  if (code === 'Escape' && game.placement) { game.placement = null; toast('Building placement cancelled.'); return; }
+  if (code === 'Escape' && campUI.isOpen) { campUI.close(true); return; }
+  if (['KeyI', 'KeyB'].includes(code) && ready && !game.dead && !game.won) { if (campUI.isOpen) campUI.close(true); else campUI.open(code === 'KeyI' ? 'inventory' : 'build'); return; }
   if (code === 'Escape') { if (!$('atlas').hidden) { $('atlas').hidden = true; return; } if (!$('guide').hidden) { $('guide').hidden = true; return; } setPause(!paused); return; }
-  if (code === 'KeyJ' && ready && !game.dead && !game.won) { const open = $('guide').hidden; setPause(true); $('guide').hidden = !open; $('guide-close').focus(); return; }
-  if (code === 'KeyM' && ready && !game.dead && !game.won) { const open = $('atlas').hidden; setPause(true); $('atlas').hidden = !open; drawMap(); if (open) $('map-close').focus(); return; }
+  if (code === 'KeyJ' && ready && !game.dead && !game.won) { campUI.close(false); const open = $('guide').hidden; setPause(true); $('guide').hidden = !open; $('guide-close').focus(); return; }
+  if (code === 'KeyM' && ready && !game.dead && !game.won) { campUI.close(false); const open = $('atlas').hidden; setPause(true); $('atlas').hidden = !open; drawMap(); if (open) $('map-close').focus(); return; }
   if (code === 'KeyN') { mapNearby = !mapNearby; drawMap(); return; }
   if (code === 'KeyV') { const muted = audio.toggle(); $('sound').textContent = muted ? 'Sound off' : 'Sound on'; return; }
   if (paused || game.dead || game.won) return;
-  if (code === 'KeyE') toast(interact(game));
+  if (game.placement && ['KeyT', 'KeyZ', 'KeyX'].includes(code)) { if (code === 'KeyT') game.placement.yaw += Math.PI / 12; else game.placement.distance = Math.max(2, Math.min(8, game.placement.distance + (code === 'KeyX' ? .5 : -.5))); return; }
+  if (code === 'KeyE') action(game.placement ? placeStructure(game, world) : useTarget(game, world));
+  if (code === 'KeyQ') action(useTool(game, world, creatures));
+  if (['Digit1', 'Digit2', 'Digit3'].includes(code)) action(equip(game, ['hands', 'hatchet', 'spear'][Number(code.slice(-1)) - 1]));
   if (code === 'KeyR') toast(eat(game));
   if (code === 'KeyF') {
     const animal = inspect(game, creatures);
@@ -70,6 +82,7 @@ addEventListener('keydown', e => {
   if (!e.repeat) keyAction(e.code);
 });
 addEventListener('keyup', e => { if (keys[e.code]) input[keys[e.code]] = 0; });
+document.addEventListener('camp-command', e => keyAction(e.detail));
 addEventListener('blur', () => { if (ready && !paused) setPause(true); });
 document.addEventListener('visibilitychange', () => { if (document.hidden && ready && !paused) setPause(true); });
 document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement && ready && !paused && !coarse) setPause(true); });
@@ -179,9 +192,10 @@ function updateHUD() {
   const tasks = [game.supplied, game.drank, game.discovered.length === SPECIES.length, game.elapsed >= DAY_SECONDS];
   tasks.forEach((done, i) => { $(`task-${i}`).classList.toggle('done', done); $(`task-${i}`).querySelector('span').textContent = done ? '✓' : '○'; });
   $('species-progress').textContent = `${game.discovered.length}/${SPECIES.length}`;
-  const nearSpring = WATER_SOURCES.find(s => Math.hypot(game.player.x - s.x, game.player.z - s.z) < 6), nearCache = CACHES.find(s => Math.hypot(game.player.x - s.x, game.player.z - s.z) < 4);
-  $('interaction').hidden = !nearSpring && !nearCache;
-  $('interaction-text').textContent = nearSpring ? 'Drink at ' + nearSpring.name : nearCache ? 'Search ' + nearCache.name : '';
+  const target = resolveTarget(game, world), site = placementSite(game), reason = site ? placementCheck(game, world, site) : '';
+  $('interaction').hidden = !target || !!game.placement;
+  $('interaction-text').textContent = target?.label || '';
+  campUI.update(site ? `${reason || 'Valid site · E to build'} · T rotate · Z/X nearer/farther · Esc cancel` : '');
   seen = inspect(game, creatures); $('animal').hidden = !seen;
   if (seen) { const s = SPECIES[seen.species]; $('animal-name').textContent = s.name; $('animal-state').textContent = `${s.kind} · ${seen.state.toLowerCase()} · F to observe`; }
   const threat = creatures.find(c => ['Watching', 'Stalking', 'Chasing', 'Tracking', 'Attacking', 'Recovering'].includes(c.state) && Math.hypot(c.x - game.player.x, c.z - game.player.z) < 34);
@@ -191,6 +205,7 @@ function updateHUD() {
 }
 
 function endGame() {
+  campUI.close(false); game.placement = null; game.resting = false;
   paused = true; clearInput(); if (document.pointerLockElement) document.exitPointerLock();
   $('menu').hidden = true; $('guide').hidden = true; $('outcome').hidden = false; $('hud').inert = true; document.body.classList.remove('playing');
   $('outcome-title').textContent = game.dead ? 'The coast endured.' : 'You belong to the coast.';
@@ -205,7 +220,7 @@ function frame(now) {
   if (!paused) {
     if (movePointer !== null) { input.forward = Math.max(0, touchForward); input.backward = Math.max(0, -touchForward); input.right = Math.max(0, touchStrafe); input.left = Math.max(0, -touchStrafe); }
     const steps = Math.max(1, Math.ceil(dt / .016));
-    for (let i = 0; i < steps; i++) { movePlayer(game, input, dt / steps, world.colliders); updateCreatures(game, creatures, dt / steps, world.colliders); updateSurvival(game, dt / steps); if (game.dead || game.won) break; }
+    for (let i = 0; i < steps; i++) { if (!stepAdventure(game, input, dt / steps, world)) movePlayer(game, input, dt / steps, world.colliders); updateCreatures(game, creatures, dt / steps, world.colliders); updateSurvival(game, dt / steps); if (game.dead || game.won) break; }
     toastTime -= dt; if (toastTime <= 0) $('toast').classList.remove('visible');
     saveTime += dt; if (saveTime > 10) { saveGame(game); saveTime = 0; }
     if (game.dead || game.won) endGame();
@@ -215,15 +230,16 @@ function frame(now) {
   // Cap at 60 fps, and 10 fps while paused; avoid running the GPU at the display's maximum refresh rate.
   if (renderTime >= (paused ? .1 : 1 / 60) - .001) {
     const day = .10 + .90 * Math.max(0, Math.sin(game.clock / DAY_SECONDS * Math.PI * 2 + .23));
-    renderer.render(game.player, game.clock, day, game.damage, renderTime); renderTime = 0;
-    audio.update(game.player.y < 0, ground(game.player.x, game.player.z) < 5, paused);
+    syncAdventure(game, world); renderer.render(game.player, game.clock, day, game.damage, renderTime, game.dead || game.won ? null : game.camp.fire); renderTime = 0;
+    const fire = game.camp.fire, fireVolume = fire?.burning ? 1 / (1 + Math.hypot(game.player.x - fire.x, game.player.z - fire.z) ** 2 * .1) : 0;
+    audio.update(game.player.y < 0, ground(game.player.x, game.player.z) < 5, paused, fireVolume);
   }
 }
 
 async function boot() {
   try {
     $('status').textContent = 'Raising the coastline…'; await new Promise(resolve => requestAnimationFrame(resolve));
-    world = makeWorld(); $('load-progress').value = .65;
+    world = makeWorld(); game = loadGame(undefined, world) || newGame(); rebuildCampColliders(game, world); syncAdventure(game, world); $('load-progress').value = .65;
     $('status').textContent = 'Bringing the Jurassic to life…';
     renderer = await makeRenderer(canvas, world, creatures, fail);
     // Reset by copying into the existing GPU instance objects, not by replacing their references.
@@ -232,7 +248,7 @@ async function boot() {
     $('enter').textContent = game.elapsed > 0 ? 'Resume expedition' : 'Begin expedition'; $('enter').disabled = false; ready = true; last = performance.now(); requestAnimationFrame(frame);
     $('hud').inert = true;
     if (__DEV__) Object.defineProperty(window, 'jurassicDev', { value: {
-      snapshot: () => ({ player: { ...game.player }, health: game.health, hunger: game.hunger, thirst: game.thirst, oxygen: game.oxygen, stamina: game.stamina, rations: game.rations, elapsed: game.elapsed, discovered: [...game.discovered], paused, dead: game.dead, won: game.won, creatures: creatures.map(c => ({ species: c.species, x: c.x, z: c.z, y: c.y, state: c.state })) }),
+      snapshot: () => ({ player: { ...game.player }, health: game.health, hunger: game.hunger, thirst: game.thirst, oxygen: game.oxygen, stamina: game.stamina, rations: game.rations, inventory: { ...game.inventory }, tools: { ...game.tools }, camp: structuredClone(game.camp), depleted: [...game.depleted], elapsed: game.elapsed, discovered: [...game.discovered], paused, dead: game.dead, won: game.won, creatures: creatures.map(c => ({ species: c.species, x: c.x, z: c.z, y: c.y, state: c.state })) }),
       world: () => ({ objects: world.objects.length, colliders: world.colliders.length, meshes: Object.keys(world.meshes) })
     } });
     if (__DEV__) {
@@ -253,6 +269,24 @@ async function boot() {
         }; panel.append(b);
       }
       document.body.append(panel);
+      const viewPoint = (point, offset = 2.6) => { const x = point.x, z = point.z + offset, y = ground(x, z) + 1.7; Object.assign(game.player, { x, z, y, yaw: offset < 0 ? Math.PI : 0, pitch: Math.atan2(point.y - y, Math.abs(offset)), climb: null, swimming: false, grounded: true, vx: 0, vy: 0, vz: 0 }); game.resting = false; updateHUD(); };
+      const fixture = (name, run) => { const b = document.createElement('button'); b.textContent = name; b.onclick = run; panel.append(b); };
+      for (const item of ['wood', 'stone', 'fiber', 'timber']) fixture('Next ' + item, () => { const n = world.adventure.nodes.filter(n => !game.depleted.includes(n.id) && (item === 'timber' ? n.requires : n.item === item && !n.requires)).sort((a, b) => Math.hypot(a.x - 56, a.z - 32) - Math.hypot(b.x - 56, b.z - 32))[0]; if (n) viewPoint({ ...n, y: n.y + .25 }); });
+      fixture('Climb entry', () => viewPoint({ ...world.adventure.climbs[0], y: world.adventure.climbs[0].y + 1.4 }, 1.8));
+      fixture('Supply cache', () => viewPoint({ ...CACHES[0], y: ground(CACHES[0].x, CACHES[0].z) + .65 }, 2));
+      fixture('Camp site view', () => {
+        const type = game.placement?.type || 'tent', origin = game.camp.tent || { x: 54, z: 52 };
+        for (let r = 0; r < (type === 'tent' ? 90 : 12); r += 1.5) for (let j = 0; j < 24; j++) {
+          const a = j * Math.PI / 12, x = origin.x + Math.sin(a) * r, z = origin.z + Math.cos(a) * r, p = game.player;
+          const old = { ...p }; Object.assign(p, { x, z: z + 4, y: ground(x, z + 4) + 1.7, yaw: 0, swimming: false, grounded: true, climb: null });
+          const previous = game.placement; game.placement = { type, distance: 4, yaw: 0 }; const site = placementSite(game);
+          if (!placementCheck(game, world, site)) { if (!previous) game.placement = null; viewPoint({ x, z, y: site.y + .5 }, 4); return; }
+          Object.assign(p, old); game.placement = previous;
+        }
+        toast('No free campsite found near this fixture.');
+      });
+      for (const type of ['tent', 'fire', 'chest']) fixture('Face ' + type, () => { const c = game.camp[type]; if (!c) return; const x = c.x - Math.sin(c.yaw) * (type === 'tent' ? 1.9 : 0), z = c.z - Math.cos(c.yaw) * (type === 'tent' ? 1.9 : 0); viewPoint({ x, z, y: c.y + (type === 'tent' ? .9 : .55) }, type === 'tent' ? -2 : 2); });
+      fixture('Advance world 12s', () => { if (paused) return; for (let i = 0; i < 750; i++) { if (!stepAdventure(game, {}, .016, world)) movePlayer(game, {}, .016, world.colliders); updateCreatures(game, creatures, .016, world.colliders); updateSurvival(game, .016); if (game.dead || game.won) break; } updateHUD(); });
       addEventListener('keydown', e => { if (e.code === 'Backquote') { panel.hidden = !panel.hidden; panel.style.display = panel.hidden ? 'none' : 'flex'; } });
     }
   } catch (error) { console.error(error); fail(error.message); }

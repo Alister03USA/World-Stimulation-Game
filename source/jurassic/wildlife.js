@@ -108,6 +108,9 @@ export function updateWildlife(game, creatures, dt, colliders = []) {
     c.timer -= dt; c.cooldown = Math.max(0, c.cooldown - dt); c.memory = Math.max(0, c.memory - dt); c.thirst = Math.min(1, c.thirst + dt / 170);
     const distance = Math.hypot(p.x - c.x, p.z - c.z), validHabitat = aquatic ? p.y < .9 && ground(p.x, p.z) < -2 && !isFreshwater(p.x, p.z) : p.y >= .9 && ground(p.x, p.z) > 0;
     let target = { x: c.targetX, z: c.targetZ }, speed = 0, head = 0;
+    if (predator && ((c.defendUntil ?? -1) > game.elapsed || !aquatic && p.climb && p.climb.height > 4.5 && distance < 30)) {
+      c.state = p.climb ? 'Watching' : 'Hesitating'; c.attackWindup = 0; c.speed = Math.max(0, c.speed - dt * 8); c.gaitStrength *= Math.exp(-dt * 8); continue;
+    }
     if (predator) {
       const sensed = validHabitat && canSense(c, p, local);
       if (sensed) { c.lastX = p.x; c.lastZ = p.z; c.memory = 5; c.searchTime = 6; }

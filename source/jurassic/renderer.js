@@ -96,7 +96,7 @@ export async function makeRenderer(canvas, world, creatures, onError) {
     depth = device.createTexture({ size: [w, h], format: 'depth24plus', sampleCount: 4, usage: GPUTextureUsage.RENDER_ATTACHMENT });
     multisample = device.createTexture({ size: [w, h], format, sampleCount: 4, usage: GPUTextureUsage.RENDER_ATTACHMENT });
   }
-  function render(player, clock, daylight, damage, dt) {
+  function render(player, clock, daylight, damage, dt, fire = null) {
     frames++; time += dt;
     if (time > 2 && clock - lastResize > 3) { const fps = frames / time; if (fps < 43 && quality > .5) quality = Math.max(.5, quality - .1); frames = 0; time = 0; lastResize = clock; }
     resize();
@@ -108,16 +108,17 @@ export async function makeRenderer(canvas, world, creatures, onError) {
     const angle = (clock / 720) * Math.PI * 2 + .23, sunY = Math.sin(angle), sunL = Math.hypot(.38, Math.max(.08, sunY), -.47);
     globals.set([x, y, z, clock], 16); globals.set([.38 / sunL, Math.max(.08, sunY) / sunL, -.47 / sunL, daylight], 20);
     globals.set([width, height, 1, y < 0 ? 1 : 0, rx, 0, rz, tan * aspect, ux, uy, uz, tan, fx, fy, fz, near, clock / 720, damage, 0, 0], 24);
-    writeLightMatrix(globals, 44, x, Math.max(y - 1.7, 0) + 4, z, globals.subarray(20, 23)); globals.set([1, 0, 0, 0], 60);
+    writeLightMatrix(globals, 44, x, Math.max(y - 1.7, 0) + 4, z, globals.subarray(20, 23)); globals.set(fire?.burning ? [fire.x, fire.y + .8, fire.z, 1] : [0, 0, 0, 0], 60);
     device.queue.writeBuffer(uniform, 0, globals);
     for (const group of groups) {
       let visible = 0, shadowCount = 0;
       const fine = group.name.endsWith('_detail'), clutter = ['litter', 'pebbles'].includes(group.name);
       const farLimit = fine ? 22 : clutter ? 38 : group.name.startsWith('terrain_') ? 650 : ['arch', 'spire'].includes(group.name) ? 400 : ['tree', 'coniferBroad', 'ginkgo'].includes(group.name) ? 260 : ['fern', 'horsetail'].includes(group.name) ? 65 : ['weed', 'cycad'].includes(group.name) ? 85 : 200;
       for (const o of group.all) {
+        if (o.active === false) continue;
         const dx = o.x - x, dy = o.y - y, dz = o.z - z, radius = (o.scale || 1) * group.mesh.radius;
         const distance = Math.hypot(dx, dz), shadowLimit = ['fern', 'horsetail', 'weed', 'cycad'].includes(group.name) ? 45 : 135;
-        if (!fine && !clutter && distance < shadowLimit + radius) writeTransform(group.shadowData, shadowCount++ * 36, o);
+        if (!fine && !clutter && !o.noShadow && distance < shadowLimit + radius) writeTransform(group.shadowData, shadowCount++ * 36, o);
         const forward = dx * fx + dy * fy + dz * fz;
         if (fine ? distance > 22 : o.detailMesh && distance <= 22) continue;
         if (distance > farLimit + radius || forward < -radius) continue;
