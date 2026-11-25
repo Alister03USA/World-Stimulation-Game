@@ -7,6 +7,8 @@ import { indexColliders } from './spatial.js';
 export * from './geography.js';
 export { ground, terrainHeight, heights } from './terrain.js';
 import { makeConifer, makeFern, makeCycad, makeGinkgo, makeHorsetail } from './plants.js';
+import { forestHabitat, detailHash, FOREST_GROVES } from './habitat.js';
+import { dressLandscape } from './landscape.js';
 
 export const SPECIES = [
   { name: 'Stegosaurus', mesh: 'stego', role: 'browser', kind: 'Herbivore', material: 1, radius: 5.5, viewHeight: 2, detail: 'A Late Jurassic plated browser with a small head and four tail spikes. Keep clear of its tail.', color: '#c7d59b' },
@@ -27,8 +29,8 @@ export const FLORA = [
 
 export function makeWorld() {
   rseed(410);
-  const meshes = { tree: makeConifer(), ginkgo: makeGinkgo(), fern: makeFern(), treefern: makeFern(true), cycad: makeCycad(), horsetail: makeHorsetail(), weed: makeFern(false, true), ...detailedAnimals() };
-  const rock = new Geometry(); rock.mesh(icosphere(2, (x, y, z) => { const r = 1 + (fbm(x * 2, y * 2, z * 2, 2) - 0.5) * 0.5; return [x * r, y * r * 0.8, z * r]; }), [0.34, 0.35, 0.28]); meshes.rock = rock.finish();
+  const meshes = { tree: makeConifer(), coniferBroad: makeConifer(1), ginkgo: makeGinkgo(), fern: makeFern(), fern_detail: makeFern(false, false, true), treefern: makeFern(true), treefern_detail: makeFern(true, false, true), cycad: makeCycad(), horsetail: makeHorsetail(), weed: makeFern(false, true), ...detailedAnimals() };
+  const rock = new Geometry(); rock.mesh(icosphere(2, (x, y, z) => { const r = 1 + (fbm(x * 2, y * 2, z * 2, 2) - 0.5) * 0.5; return [x * r, y * r * 0.8, z * r]; }), [0.34, 0.35, 0.28], 41); meshes.rock = rock.finish();
   const box = new Geometry(); box.box([0, 0.5, 0], [1.2, 0.8, 0.9], [0.24, 0.18, 0.10]); box.box([0, 0.94, 0], [1.3, 0.13, 0.98], [0.45, 0.37, 0.21]); box.box([0, 1.02, 0], [0.17, 0.03, 0.8], [0.83, 0.72, 0.42]); meshes.cache = box.finish();
   const objects = [], colliders = [];
   for (const tile of makeTerrainTiles()) { meshes[tile.name] = tile.mesh; objects.push({ mesh: tile.name, x: tile.x, y: tile.y, z: tile.z }); }
@@ -80,6 +82,20 @@ export function makeWorld() {
     if (Math.hypot(x, z) < 205 || Math.hypot(x, z) > LIMIT - 15 || clear(x, z)) continue;
     add('rock', x, z, scale, rnd() * 6.28); if (h > 0 && scale > 1) colliders.push({ x, z, radius: scale * .85 });
   }
+  for (let i = 0; i < 960; i++) {
+    const center = FOREST_GROVES[i % FOREST_GROVES.length], a = detailHash(i, 6) * 6.28, r = Math.sqrt(detailHash(i, 7)) * 36, x = center[0] + Math.cos(a) * r, z = center[1] + Math.sin(a) * r, h = ground(x, z);
+    if (h < 5 || clear(x, z) || clearings.some(c => Math.hypot(x - c[0], z - c[1]) < c[2]) || Math.hypot(x - SPAWN.x, z - SPAWN.z) < 12) continue;
+    const slope = Math.hypot(ground(x + 1, z) - ground(x - 1, z), ground(x, z + 1) - ground(x, z - 1)) / 2;
+    if (slope > .75) continue;
+    const size = .72 + detailHash(i, 9) * .65, type = i % 6 === 0 ? 'ginkgo' : 'coniferBroad'; add(type, x, z, size, a); colliders.push({ x, z, radius: (type === 'ginkgo' ? .43 : .6) * size });
+  }
+  const forestTrees = objects.filter(o => ['tree', 'coniferBroad', 'ginkgo'].includes(o.mesh));
+  for (const tree of forestTrees) for (let i = 0; i < 4; i++) {
+    const a = detailHash(tree.x, tree.z, i + 41) * 6.28, r = 1.5 + detailHash(tree.x, tree.z, i + 51) * 5, x = tree.x + Math.cos(a) * r, z = tree.z + Math.sin(a) * r, h = ground(x, z);
+    if (h < 2 || WATER_SOURCES.some(p => Math.hypot(x - p.x, z - p.z) < 4) || CACHES.some(p => Math.hypot(x - p.x, z - p.z) < 2.5)) continue;
+    const habitat = forestHabitat(x, z, h), type = habitat.moisture > .7 && i === 0 && !clear(x, z) ? 'treefern' : 'fern';
+    add(type, x, z, .45 + detailHash(x, z) * .6, a); if (type === 'treefern') colliders.push({ x, z, radius: .22 });
+  }
   const arch = new Geometry();
   for (let i = 0; i < 15; i++) { const a = i / 14 * Math.PI; arch.ellipsoid([Math.cos(a) * 7, 3 + Math.sin(a) * 8, 0], [1.5, 2.2, 1.8], [.36, .32, .23], 0, 2); }
   for (const x of [-7, 7]) arch.ellipsoid([x, -2, 0], [2, 10, 2.2], [.32, .30, .23], 0, 2);
@@ -94,9 +110,16 @@ export function makeWorld() {
   for (let i = 0; i <= 32; i++) { const a = i / 32 * Math.PI * 2; pool.vertex([Math.cos(a) * 2.8, 0, Math.sin(a) * 2.8], [0, 1, 0], [.065, .38, .34]); if (i) pool.tri(center, i + 1, i); }
   meshes.spring = pool.finish();
   for (const source of WATER_SOURCES) { add('spring', source.x, source.z, 1, 0, { y: ground(source.x, source.z) + .7 }); if (source.id !== 'coast') for (let i = 0; i < 22; i++) { const a = i * 2.399, r = 4.5 + i % 3; add('horsetail', source.x + Math.cos(a) * r, source.z + Math.sin(a) * r); } }
-  const lookup = new Map(objects.map(o => [`${o.x},${o.z}`, o])), modelHeights = { tree: 25, ginkgo: 20, treefern: 5 }, bounds = {};
+  dressLandscape(meshes, objects, colliders, clear);
+  for (const name of ['arch', 'spire']) for (let i = 9; i < meshes[name].vertices.length; i += 16) meshes[name].vertices[i] = 41;
+  for (const o of objects) if (o.mesh === 'fern' || o.mesh === 'treefern') o.detailMesh = o.mesh + '_detail';
+  for (const o of objects) if (o.mesh === 'tree' || o.mesh === 'coniferBroad') {
+    const c = Math.cos(o.yaw), s = Math.sin(o.yaw), r = 2 * o.scale;
+    o.feet = [[c, -s], [-c, s], [s, c], [-s, -c]].map(([dx, dz]) => (ground(o.x + dx * r, o.z + dz * r) - o.y) / o.scale);
+  }
+  const lookup = new Map(objects.map(o => [`${o.x},${o.z}`, o])), modelHeights = { tree: 25, coniferBroad: 25, ginkgo: 20, treefern: 5 }, bounds = {};
   for (const name of ['rock', 'spire']) { let radius = 0, top = 0; const v = meshes[name].vertices; for (let i = 0; i < v.length; i += 16) { radius = Math.max(radius, Math.hypot(v[i], v[i + 2])); top = Math.max(top, v[i + 1]); } bounds[name] = { radius, top }; }
-  for (const c of colliders) { const o = lookup.get(`${c.x},${c.z}`), bound = o && bounds[o.mesh], scale = o?.scale || 1; if (bound) c.radius = bound.radius * scale; c.bottom = ground(c.x, c.z) - .6; c.top = ground(c.x, c.z) + (o ? (bound?.top || modelHeights[o.mesh] || 14) * scale : 14); }
+  for (const c of colliders) { if (Number.isFinite(c.top) && Number.isFinite(c.bottom)) continue; const o = lookup.get(`${c.x},${c.z}`), bound = o && bounds[o.mesh], scale = o?.scale || 1; if (bound) c.radius = bound.radius * scale; c.bottom = ground(c.x, c.z) - .6; c.top = ground(c.x, c.z) + (o ? (bound?.top || modelHeights[o.mesh] || 14) * scale : 14); }
   return { meshes, objects, colliders: indexColliders(colliders), springY };
 }
 

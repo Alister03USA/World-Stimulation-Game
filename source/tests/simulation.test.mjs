@@ -7,7 +7,7 @@ import { build } from 'esbuild';
 import { createHash } from 'node:crypto';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const bundle = await build({ stdin: { contents: "export * from './jurassic/simulation.js'; export * from './jurassic/world.js'; export * from './jurassic/renderer.js'; export * from './jurassic/assets.js'; export * from './jurassic/terrain.js'; export * from './jurassic/wildlife.js'; export * from './jurassic/spatial.js';", resolveDir: root }, write: false, bundle: true, format: 'cjs', platform: 'node', target: 'es2022', loader: { '.bin': 'binary', '.jpg': 'dataurl', '.png': 'dataurl' }, define: { __DEV__: 'false' },
+const bundle = await build({ stdin: { contents: "export * from './jurassic/simulation.js'; export * from './jurassic/world.js'; export * from './jurassic/renderer.js'; export * from './jurassic/assets.js'; export * from './jurassic/terrain.js'; export * from './jurassic/wildlife.js'; export * from './jurassic/spatial.js'; export * from './jurassic/habitat.js'; export * from './jurassic/landscape.js';", resolveDir: root }, write: false, bundle: true, format: 'cjs', platform: 'node', target: 'es2022', loader: { '.bin': 'binary', '.jpg': 'dataurl', '.png': 'dataurl' }, define: { __DEV__: 'false' },
   plugins: [{ name: 'abyssal-math', setup(b) { b.onLoad({ filter: /[\\/]src[\\/]math\.js$/ }, ({ path: p }) => ({ contents: readFileSync(p, 'utf8') + '\nexport { Mesh, icosphere, surfaceNets, sampler3, rnd, rr, rseed, vnoise, fbm, clamp, mix, sstep };', loader: 'js' })); } }] });
 const module = { exports: {} }; new Function('module', 'exports', bundle.outputFiles[0].text)(module, module.exports);
 const { newGame, movePlayer, updateSurvival, updateCreatures, interact, eat, inspect, ground, makeCreatures, makeWorld, saveGame, loadGame, SAVE_KEY, DAY_SECONDS, CACHE, SPRING, SPECIES, FLORA, writeLightMatrix, detailedAnimals, unpackMesh, writeTransform } = module.exports;
@@ -312,4 +312,41 @@ test('marine animals steer around rock pinnacles at their swimming depth', () =>
   const g = newGame(), c = makeCreatures().find(c => c.herd === 'lagoon-marine'); placePlayer(g, 56, 32); c.yaw = 0; c.timer = 20; c.targetX = c.x; c.targetZ = c.z - 16;
   const rock = { x: c.x, z: c.z - 5, radius: 1, bottom: -12, top: 2 };
   for (let i = 0; i < 600; i++) { updateCreatures(g, [c], 1 / 60, [rock]); assert.ok(Math.hypot(c.x - rock.x, c.z - rock.z) > rock.radius + c.bodyRadius - .02); }
+});
+
+test('forest dressing follows the ground and leaves freshwater and supplies accessible', () => {
+  const w = testWorld(), dressing = w.objects.filter(o => ['litter', 'pebbles', 'deadwood', 'stump'].includes(o.mesh));
+  for (const mesh of ['litter', 'pebbles', 'deadwood', 'stump']) assert.ok(dressing.some(o => o.mesh === mesh), mesh);
+  for (const o of dressing) {
+    assert.ok(Math.abs(o.y - ground(o.x, o.z) - .018) < 1e-8);
+    assert.ok([o.pitch, o.roll, o.scale].every(Number.isFinite));
+    for (const water of WATER_SOURCES) assert.ok(Math.hypot(o.x - water.x, o.z - water.z) >= 3.5);
+    for (const cache of CACHES) assert.ok(Math.hypot(o.x - cache.x, o.z - cache.z) >= 2);
+  }
+  for (const o of dressing.filter(o => o.mesh === 'stump')) {
+    const collider = w.colliders.find(c => c.x === o.x && c.z === o.z); assert.ok(collider); assert.ok(collider.top - ground(o.x, o.z) < 2);
+  }
+});
+test('close fern detail keeps the same silhouette and anchored leaf deformation', () => {
+  const meshes = testWorld().meshes;
+  for (const name of ['fern', 'treefern']) {
+    const coarse = meshes[name], fine = meshes[name + '_detail']; assert.ok(fine.indices.length > coarse.indices.length);
+    for (let axis = 0; axis < 3; axis++) {
+      const extent = mesh => { let lo = Infinity, hi = -Infinity; for (let i = axis; i < mesh.vertices.length; i += 16) { lo = Math.min(lo, mesh.vertices[i]); hi = Math.max(hi, mesh.vertices[i]); } return [lo, hi]; };
+      const a = extent(coarse), b = extent(fine); assert.ok(Math.abs(a[0] - b[0]) < .3 && Math.abs(a[1] - b[1]) < .3);
+    }
+    let roots = 0, tips = 0;
+    for (let i = 0; i < fine.vertices.length; i += 16) if (fine.vertices[i + 9] === 30) {
+      const weight = fine.vertices[i + 15]; assert.ok(weight >= 0 && weight <= 1); if (weight === 0) roots++; if (weight === 1) tips++;
+    }
+    assert.ok(roots && tips);
+  }
+});
+test('shared forest habitat respects shoreline and slope and is deterministic', () => {
+  const { forestHabitat, detailHash } = module.exports;
+  assert.equal(forestHabitat(100, 30, -.5).canopy, 0); assert.equal(forestHabitat(-250, 50, 15, 2).canopy, 0);
+  assert.deepEqual(forestHabitat(-205, 290, 3), forestHabitat(-205, 290, 3));
+  assert.ok(forestHabitat(-205, 290, 3).moisture > forestHabitat(0, 80, 15).moisture);
+  assert.equal(detailHash(-122, 65, 7), detailHash(-122, 65, 7));
+  for (let i = 0; i < 100; i++) { const n = detailHash(i, -i, 4); assert.ok(n >= 0 && n < 1); }
 });

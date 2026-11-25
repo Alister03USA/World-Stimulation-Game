@@ -1,6 +1,7 @@
 import { fbm, clamp, mix, sstep } from '../src/math.js';
 import { Geometry } from './geometry.js';
 import { SPRING, MAP_SPAN, WATER_SOURCES, riverX, regionAt } from './geography.js';
+import { forestHabitat } from './habitat.js';
 
 // Keep the original coast and triangulation near the player start; new land joins to the west.
 export function coastHeight(x, z) {
@@ -51,8 +52,10 @@ export function makeTerrainTiles() {
       const n = fbm(px * .08, 5, pz * .08, 2), green = sstep(2.4, 8, h), cliff = sstep(.55, 1.7, Math.hypot(nx, nz) / 2);
       let color = [mix(.58, .12 + n * .055, green), mix(.49, .20 + n * .09, green), mix(.32, .085 + n * .04, green)];
       if (regionAt(px, pz, h) === 'Fern wetlands' && h > -1.5 && h < 6) color = [.12 + n * .08, .19 + n * .08, .065 + n * .045];
+      const habitat = forestHabitat(px, pz, h, Math.hypot(nx, nz) / 2);
+      color = color.map((v, k) => mix(v, [.16 + n * .045, .135 + n * .04, .065 + n * .02][k], habitat.canopy * .8));
       color = color.map((v, k) => mix(v, [.27, .29, .25][k], cliff));
-      g.vertex([px - cx, h - cy, pz - cz], [nx / len, 2 / len, nz / len], color);
+      g.vertex([px - cx, h - cy, pz - cz], [nx / len, 2 / len, nz / len], color, 40, [habitat.canopy, habitat.moisture]);
       if (x < TILE && z < TILE) { const i = z * (TILE + 1) + x; g.tri(i, i + TILE + 1, i + 1); g.tri(i + 1, i + TILE + 1, i + TILE + 2); }
     }
     tiles.push({ name: `terrain_${tx}_${tz}`, x: cx, y: cy, z: cz, mesh: g.finish() });

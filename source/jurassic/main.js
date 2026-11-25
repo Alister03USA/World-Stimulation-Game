@@ -237,12 +237,13 @@ async function boot() {
     } });
     if (__DEV__) {
       const panel = document.createElement('aside'); panel.id = 'dev-tools'; panel.hidden = true;
-      panel.style.cssText = 'position:fixed;top:75px;left:50%;transform:translateX(-50%);z-index:30;display:flex;flex-wrap:wrap;justify-content:center;width:min(1000px,94vw);gap:4px;background:#102019;padding:8px';
+      panel.style.cssText = 'position:fixed;top:75px;left:50%;transform:translateX(-50%);z-index:30;display:none;flex-wrap:wrap;justify-content:center;width:min(1000px,94vw);gap:4px;background:#102019;padding:8px';
       const poses = [
         ['Coast', 56, 32, -.9, -.06, null], ['Stegosaurus', 51, 29, -.55, .025, null],
         ['Brachiosaurus', 26, -10, -.7, .19, null], ['Diplodocus', -35, 48, -.8, .05, null], ['Ceratosaurus', -61, -9, -.65, .04, null],
         ['River Gate', -240, 65, -.7, .08, null], ['Wetlands', -148, 290, -.7, 0, null], ['Uplands', -390, -245, .70, .20, null], ['Lagoon', 320, 215, -.5, -.07, -4], ['River spring', -208, 23, -.5, -.2, null],
         ['Spring', 29, 14, -.8, -.35, null], ['Predator', -23, -15, -.5, -.05, null],
+        ['Forest floor', -110, 68, -.8, -.24, null], ['Conifer grove', -118, 81, -.4, .24, null],
         ['Dive', 130, 34, .3, 0, -4], ['Surface', 130, 34, -1.5, 0, .65]
       ];
       for (const [name, x, z, yaw, pitch, y] of poses) {
@@ -252,7 +253,7 @@ async function boot() {
         }; panel.append(b);
       }
       document.body.append(panel);
-      addEventListener('keydown', e => { if (e.code === 'Backquote') panel.hidden = !panel.hidden; });
+      addEventListener('keydown', e => { if (e.code === 'Backquote') { panel.hidden = !panel.hidden; panel.style.display = panel.hidden ? 'none' : 'flex'; } });
     }
   } catch (error) { console.error(error); fail(error.message); }
 }

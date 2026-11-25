@@ -90,18 +90,25 @@ fn deform(i: Input) -> Deformed {
   if (i.joint == 30.) {
     let wind = sin(g.camera.w * .75 + i.d.x * .055 + i.d.z * .08) + .35 * sin(g.camera.w * 1.7 + p.x * .4);
     p.x += wind * min(p.y, 25.) * .012; p.z += sin(g.camera.w * .6 + i.d.x * .04) * p.y * .006;
+    let flutter = sin(g.camera.w * 2.3 + i.pivot.x * 3. + i.pivot.z * 2.) * .018 * i.weight;
+    p.y += flutter; normal = rotateZ(normal, flutter * .6);
+  }
+  if (i.joint == 42. && i.params.z < .5 && p.y < .8) {
+    let tx = clamp(abs(p.x) * .5, 0., 1.); let tz = clamp(abs(p.z) * .5, 0., 1.);
+    let height = select(i.feet.y, i.feet.x, p.x >= 0.) * tx + select(i.feet.w, i.feet.z, p.z >= 0.) * tz;
+    p.y += height * (1. - smoothstep(.35, .8, i.p.y));
   }
   if (i.params.z > .5) { p.x *= 1. + sin(g.camera.w * 1.05 + i.params.x) * .004; }
   var result: Deformed; result.p = p; result.n = normal; return result;
 }
 struct Output {
   @builtin(position) position: vec4f, @location(0) world: vec3f, @location(1) normal: vec3f, @location(2) color: vec3f,
-  @location(3) uv: vec2f, @location(4) local: vec3f, @location(5) @interpolate(flat) material: vec3f, @location(6) localNormal: vec3f
+  @location(3) uv: vec2f, @location(4) local: vec3f, @location(5) @interpolate(flat) material: vec3f, @location(6) localNormal: vec3f, @location(7) @interpolate(flat) surface: f32
 };
 @vertex fn vs(i: Input) -> Output {
   let d = deform(i); let m = mat4x4f(i.a, i.b, i.c, i.d); let wp = m * vec4f(d.p, 1.);
   var o: Output; o.position = g.vp * wp; o.world = wp.xyz; o.normal = normalize((m * vec4f(d.n, 0.)).xyz);
-  o.color = i.color; o.uv = i.uv; o.local = i.p; o.localNormal = i.n; o.material = vec3f(i.params.w, i.params.z, select(0., 1., i.joint == 30.)); return o;
+  o.color = i.color; o.uv = i.uv; o.local = i.p; o.localNormal = i.n; o.surface = i.joint; o.material = vec3f(i.params.w, i.params.z, select(0., 1., i.joint == 30.)); return o;
 }
 @vertex fn vsShadow(i: Input) -> @builtin(position) vec4f { let d = deform(i); return g.lightVP * mat4x4f(i.a, i.b, i.c, i.d) * vec4f(d.p, 1.); }
 fn fresnel(f0: vec3f, cosine: f32) -> vec3f { return f0 + (1. - f0) * pow(1. - cosine, 5.); }
@@ -113,6 +120,7 @@ fn fresnel(f0: vec3f, cosine: f32) -> vec3f { return f0 + (1. - f0) * pow(1. - c
   var normal = normalize(i.normal) * select(-1., 1., front); var albedo = i.color; var roughness = .85; var ao = 1.;
   let dp1 = dpdx(i.world); let dp2 = dpdy(i.world); let duv1 = dpdx(i.uv); let duv2 = dpdy(i.uv);
   let frequency = select(select(1.6, 1., species == 5.), 2.8, species == 3.); let q = i.local * frequency; let qx = dpdx(q); let qy = dpdy(q);
+  let nearDetail = 1. - smoothstep(8., 32., length(i.world - g.camera.xyz)); let uvFootprint = max(length(duv1), length(duv2));
   if (layer == 3) {
     let weights0 = pow(abs(normalize(i.localNormal)), vec3f(4.)); let weights = weights0 / max(dot(weights0, vec3f(1.)), .001);
     let skin = textureSampleGrad(albedoMap, surfaceSampler, q.yz, 3, qx.yz, qy.yz).rgb * weights.x + textureSampleGrad(albedoMap, surfaceSampler, q.xz, 3, qx.xz, qy.xz).rgb * weights.y + textureSampleGrad(albedoMap, surfaceSampler, q.xy, 3, qx.xy, qy.xy).rgb * weights.z;
@@ -134,7 +142,37 @@ fn fresnel(f0: vec3f, cosine: f32) -> vec3f { return f0 + (1. - f0) * pow(1. - c
   } else {
     let n = noise(i.world.xz * 3.1 + i.world.y * .4); let broadNoise = noise(i.world.xz * .22);
     albedo *= (.81 + .19 * broadNoise + n * .17);
-    if (leaf < .5 && abs(normal.y) < .7) { let bark = noise(vec2f(atan2(i.local.x, i.local.z) * 28., i.local.y * 1.7)); albedo *= .73 + bark * .50; }
+    if (i.surface == 40.) {
+      let p = i.world.xz; let forest = i.uv.x; let moisture = i.uv.y; let slope = 1. - abs(normal.y);
+      let patches = noise(p * .38); let grain = noise(p * 47.); let grit = smoothstep(.76, .92, noise(p * 14.));
+      let sand = 1. - smoothstep(.6, 4., i.world.y); let mud = moisture * (1. - smoothstep(1., 6., i.world.y));
+      let ripples = sin(p.x * 8. + sin(p.y * 1.8) * 2.) * .025 * sand * nearDetail;
+      albedo *= .91 + patches * .15 + ((grain - .5) * .17 + grit * .12 + ripples) * nearDetail;
+      albedo = mix(albedo, vec3f(.12, .105, .065) * (.8 + patches * .35), mud * .44);
+      let moss = smoothstep(.55, .76, patches) * forest * moisture * (1. - smoothstep(.4, .65, slope));
+      albedo = mix(albedo, vec3f(.11, .15, .045), moss * .5); roughness = mix(.94, .58, mud);
+      normal = normalize(normal + vec3f((grain - .5) * .075, 0., (n - .5) * .075) * nearDetail);
+    } else if (i.surface == 41.) {
+      let layers = sin(i.world.y * 8. + noise(i.world.xz * 2.) * 2.); let mineral = noise(i.world.xz * 17. + i.world.y * 9.);
+      albedo *= .84 + .19 * noise(i.world.xz * .7 + i.world.y) + (mineral - .5) * .20 * nearDetail;
+      albedo *= 1. - smoothstep(.86, 1., abs(layers)) * .13 * nearDetail;
+      let damp = 1. - smoothstep(.1, 2.8, i.world.y); roughness = mix(.87, .48, damp); albedo *= 1. - damp * .25;
+      albedo = mix(albedo, vec3f(.13, .17, .065), smoothstep(.55, .8, noise(i.world.xz * .9)) * max(normal.y, 0.) * .3);
+    } else if (i.surface == 42. || i.surface == 44.) {
+      let a = select(atan2(i.local.x, i.local.z), atan2(i.local.x, i.local.y - .34), i.surface == 44.); let along = select(i.local.y, i.local.z, i.surface == 44.);
+      let furrows = noise(vec2f(a * 19., along * 1.4)); let splits = smoothstep(.68, .85, noise(vec2f(a * 37., along * .75)));
+      albedo *= .65 + furrows * .65 - splits * .17 * nearDetail;
+      let moss = (1. - smoothstep(.2, 2., i.local.y)) * smoothstep(.43, .75, noise(i.world.xz * 2.));
+      albedo = mix(albedo, vec3f(.12, .15, .045), moss * .42); roughness = .91;
+    } else if (i.surface == 45.) {
+      let r = length(i.uv); let rings = sin(r * 65. + noise(i.uv * 7.) * 2.);
+      albedo *= mix(.92, .83 + smoothstep(-.4, .5, rings) * .19, 1. - smoothstep(.02, .12, uvFootprint)); roughness = .94;
+    } else if (leaf > .5) {
+      let veinWidth = max(.025, uvFootprint * 1.2); let midrib = 1. - smoothstep(veinWidth, veinWidth * 2., abs(i.uv.x));
+      let vein = 1. - smoothstep(.055 + uvFootprint, .13 + uvFootprint, abs(sin((i.uv.y * 11. - abs(i.uv.x) * 2.) * PI)));
+      let detail = 1. - smoothstep(.025, .12, uvFootprint); albedo *= 1. + (midrib * .18 + vein * .09) * detail;
+      albedo *= .93 + noise(i.local.xz * 30. + i.local.y * 11.) * .10 * nearDetail; roughness = .72;
+    } else if (i.surface == 43.) { albedo *= .82 + noise(i.world.xz * 28.) * .35; roughness = .98; }
   }
   let light = g.sun.xyz; let view = normalize(g.camera.xyz - i.world); let halfVector = normalize(light + view);
   let nl = max(dot(normal, light), 0.); let nv = max(dot(normal, view), .001); let nh = max(dot(normal, halfVector), 0.); let vh = max(dot(view, halfVector), 0.);

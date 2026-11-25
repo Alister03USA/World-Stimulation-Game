@@ -76,7 +76,7 @@ Herbivores forage, browse, rest, follow separated herd members, make room for th
 
 ## Beyond the coast
 
-The world contains 33 animals across the six species, with regional herds and marine groups. Press **M** or click **Map** to pause and view all springs, provisions and landmarks. The small map follows the player; **N** switches it to the full overview. The journal describes the four landmarks:
+The world contains 32 animals across the six species, with regional herds and marine groups. Press **M** or click **Map** to pause and view all springs, provisions and landmarks. The small map follows the player; **N** switches it to the full overview. The journal describes the four landmarks:
 
 - **A — River Gate:** a natural stone arch beside the western river valley and a shallow crossing.
 - **B — Needle Ridge:** a rock spire in the northwest conifer uplands.
@@ -134,3 +134,9 @@ WebGPU is required; unsupported devices get an on-screen startup message. The re
 Allosaurus and Ceratosaurus now have distinct profiled skulls, small inset eyes, nostrils, separate jaws/teeth, finger claws and rigged toes. Ceratosaurus has a blade-shaped nasal horn and small dorsal scutes. Diplodocus has a smaller profiled head, pillar-like feet and a continuous tapered whip tail. Cryptoclidus has a flattened torso, small head and four hydrofoil-shaped flippers with separate stroke/twist deformation. The four journal portraits are regenerated from these actual game models.
 
 The embedded [CC0 reptile skin photo](https://opengameart.org/content/reptile-skin) supplies surface variation without runtime downloads; animal colors and skin patterns remain artistic reconstructions. Provenance and anatomical reference links are in `source/assets/appearance-sources.json` and `THIRD_PARTY.md`. To reimport the original photo, run `node tools/prepare-skin.mjs /path/to/lizard_skin.png` from `source/`, then bake meshes, render portraits and build. This is procedural deformation, not a complete skeletal rig.
+
+## Jurassic forest and landscape detail
+
+Forests now have fuller conifer crowns, a second conifer shape, larger ginkgo fans, clustered groves and more understory. Close ferns show finer divisions and curled young fronds; leaves have subtle vein shading, aged tips and flutter. Bark grooves, cycad cone scales, root alignment, fallen needles/frond fragments, twigs, pebbles, logs and stumps add detail near the player. Soil, sand, mud and rock use distinct procedural surface variation.
+
+Fine fern meshes are limited to nearby views, with simpler matching silhouettes farther away. Ground clutter has a short draw distance and reduced shadow cost. The original terrain heights, resource locations, animal models and survival objectives remain compatible. See [forest references and playtest](docs/FOREST_REFERENCES.md) for fossil-informed design, artistic limits and rendering notes.

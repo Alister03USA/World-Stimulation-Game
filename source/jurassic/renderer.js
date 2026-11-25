@@ -78,7 +78,7 @@ export async function makeRenderer(canvas, world, creatures, onError) {
   }));
   const groups = [];
   for (const name of meshes.keys()) {
-    const objects = world.objects.filter(o => o.mesh === name);
+    const objects = world.objects.filter(o => o.mesh === name || o.detailMesh === name);
     const animals = creatures.filter(o => o.mesh === name), all = [...objects, ...animals];
     if (!all.length) continue;
     const data = new Float32Array(all.length * 36); all.forEach((o, i) => writeTransform(data, i * 36, o));
@@ -112,12 +112,15 @@ export async function makeRenderer(canvas, world, creatures, onError) {
     device.queue.writeBuffer(uniform, 0, globals);
     for (const group of groups) {
       let visible = 0, shadowCount = 0;
-      const farLimit = group.name.startsWith('terrain_') ? 650 : ['arch', 'spire'].includes(group.name) ? 400 : ['tree', 'ginkgo'].includes(group.name) ? 230 : ['fern', 'horsetail'].includes(group.name) ? 65 : ['weed', 'cycad'].includes(group.name) ? 85 : 200;
+      const fine = group.name.endsWith('_detail'), clutter = ['litter', 'pebbles'].includes(group.name);
+      const farLimit = fine ? 22 : clutter ? 38 : group.name.startsWith('terrain_') ? 650 : ['arch', 'spire'].includes(group.name) ? 400 : ['tree', 'coniferBroad', 'ginkgo'].includes(group.name) ? 260 : ['fern', 'horsetail'].includes(group.name) ? 65 : ['weed', 'cycad'].includes(group.name) ? 85 : 200;
       for (const o of group.all) {
         const dx = o.x - x, dy = o.y - y, dz = o.z - z, radius = (o.scale || 1) * group.mesh.radius;
-        if (Math.hypot(dx, dz) < 135 + radius) writeTransform(group.shadowData, shadowCount++ * 36, o);
+        const distance = Math.hypot(dx, dz), shadowLimit = ['fern', 'horsetail', 'weed', 'cycad'].includes(group.name) ? 45 : 135;
+        if (!fine && !clutter && distance < shadowLimit + radius) writeTransform(group.shadowData, shadowCount++ * 36, o);
         const forward = dx * fx + dy * fy + dz * fz;
-        if (Math.hypot(dx, dz) > farLimit + radius || forward < -radius) continue;
+        if (fine ? distance > 22 : o.detailMesh && distance <= 22) continue;
+        if (distance > farLimit + radius || forward < -radius) continue;
         if (Math.abs(dx * rx + dz * rz) > Math.max(0, forward) * tan * aspect + radius * 2) continue;
         if (Math.abs(dx * ux + dy * uy + dz * uz) > Math.max(0, forward) * tan + radius * 2) continue;
         writeTransform(group.data, visible++ * 36, o);
