@@ -1,4 +1,5 @@
-import { sceneShader, skyShader, waterShader } from './shaders.js';
+import { sceneShader, skyShader, waterShader, rainShader } from './shaders.js';
+import { weatherAt, writeWeather } from './weather.js';
 import { animalTextures } from './assets.js';
 const REST_FEET = [0, 0, 0, 0], REST_CONTACTS = [0, 0, 0, 0, 0, 0, 0, 0];
 
@@ -41,7 +42,7 @@ export async function makeRenderer(canvas, world, creatures, onError) {
   const device = await adapter.requestDevice();
   device.addEventListener('uncapturederror', e => onError(e.error.message));
   device.lost.then(info => { if (info.reason !== 'destroyed') onError('The graphics device was lost. Reload to resume your saved expedition.'); });
-  const context = canvas.getContext('webgpu'), format = navigator.gpu.getPreferredCanvasFormat(), globals = new Float32Array(64);
+  const context = canvas.getContext('webgpu'), format = navigator.gpu.getPreferredCanvasFormat(), globals = new Float32Array(76);
   const uniform = device.createBuffer({ size: globals.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   const textures = await makeSurfaceTextures(device), sampler = device.createSampler({ minFilter: 'linear', magFilter: 'linear', mipmapFilter: 'linear', addressModeU: 'repeat', addressModeV: 'repeat', maxAnisotropy: 4 });
   const shadowTexture = device.createTexture({ size: [2048, 2048], format: 'depth32float', usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING });
@@ -56,7 +57,7 @@ export async function makeRenderer(canvas, world, creatures, onError) {
   const makeBind = shadow => device.createBindGroup({ layout, entries: [{ binding: 0, resource: { buffer: uniform } }, { binding: 1, resource: sampler }, ...textures.map((t, i) => ({ binding: i + 2, resource: t.createView({ dimension: '2d-array' }) })), { binding: 5, resource: shadow.createView() }, { binding: 6, resource: compare }] });
   const bind = makeBind(shadowTexture), shadowBind = makeBind(dummyShadow);
   const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [layout] });
-  const modules = [sceneShader, skyShader, waterShader].map(code => device.createShaderModule({ code }));
+  const modules = [sceneShader, skyShader, waterShader, rainShader].map(code => device.createShaderModule({ code }));
   for (const module of modules) {
     const compilation = await module.getCompilationInfo();
     const errors = compilation.messages.filter(m => m.type === 'error');
@@ -66,10 +67,10 @@ export async function makeRenderer(canvas, world, creatures, onError) {
   const instanceLayout = { arrayStride: 144, stepMode: 'instance', attributes: [...Array.from({ length: 4 }, (_, i) => ({ shaderLocation: i + 4, offset: i * 16, format: 'float32x4' })), ...[[9, 64], [13, 80], [14, 96], [8, 112], [15, 128]].map(([shaderLocation, offset]) => ({ shaderLocation, offset, format: 'float32x4' }))] };
   const pipe = (module, buffers, water = false, sky = false) => device.createRenderPipelineAsync({
     layout: pipelineLayout, vertex: { module, entryPoint: 'vs', buffers }, fragment: { module, entryPoint: 'fs', targets: [{ format, blend: water ? { color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha' }, alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' } } : undefined }] },
-    primitive: { topology: water ? 'triangle-strip' : 'triangle-list', cullMode: 'none' },
+    primitive: { topology: water && module !== modules[3] ? 'triangle-strip' : 'triangle-list', cullMode: 'none' },
     depthStencil: { format: 'depth24plus', depthWriteEnabled: !water && !sky, depthCompare: sky ? 'always' : 'less-equal' }, multisample: { count: 4 }
   });
-  const [scene, sky, water] = await Promise.all([pipe(modules[0], [vertexLayout, instanceLayout]), pipe(modules[1], [], false, true), pipe(modules[2], [], true)]);
+  const [scene, sky, water, rain] = await Promise.all([pipe(modules[0], [vertexLayout, instanceLayout]), pipe(modules[1], [], false, true), pipe(modules[2], [], true), pipe(modules[3], [], true)]);
   const shadowPipeline = await device.createRenderPipelineAsync({ layout: pipelineLayout, vertex: { module: modules[0], entryPoint: 'vsShadow', buffers: [vertexLayout, instanceLayout] }, primitive: { topology: 'triangle-list', cullMode: 'none' }, depthStencil: { format: 'depth32float', depthWriteEnabled: true, depthCompare: 'less', depthBias: 2, depthBiasSlopeScale: 1.4 } });
   const upload = (data, usage) => { const buffer = device.createBuffer({ size: Math.max(4, data.byteLength), usage: usage | GPUBufferUsage.COPY_DST }); device.queue.writeBuffer(buffer, 0, data); return buffer; };
   const meshes = new Map(Object.entries(world.meshes).map(([name, mesh]) => {
@@ -96,7 +97,7 @@ export async function makeRenderer(canvas, world, creatures, onError) {
     depth = device.createTexture({ size: [w, h], format: 'depth24plus', sampleCount: 4, usage: GPUTextureUsage.RENDER_ATTACHMENT });
     multisample = device.createTexture({ size: [w, h], format, sampleCount: 4, usage: GPUTextureUsage.RENDER_ATTACHMENT });
   }
-  function render(player, clock, daylight, damage, dt, fire = null) {
+  function render(player, clock, daylight, damage, dt, fire = null, weather = weatherAt(0), exposure = 1) {
     frames++; time += dt;
     if (time > 2 && clock - lastResize > 3) { const fps = frames / time; if (fps < 43 && quality > .5) quality = Math.max(.5, quality - .1); frames = 0; time = 0; lastResize = clock; }
     resize();
@@ -109,6 +110,7 @@ export async function makeRenderer(canvas, world, creatures, onError) {
     globals.set([x, y, z, clock], 16); globals.set([.38 / sunL, Math.max(.08, sunY) / sunL, -.47 / sunL, daylight], 20);
     globals.set([width, height, 1, y < 0 ? 1 : 0, rx, 0, rz, tan * aspect, ux, uy, uz, tan, fx, fy, fz, near, clock / 720, damage, 0, 0], 24);
     writeLightMatrix(globals, 44, x, Math.max(y - 1.7, 0) + 4, z, globals.subarray(20, 23)); globals.set(fire?.burning ? [fire.x, fire.y + .8, fire.z, 1] : [0, 0, 0, 0], 60);
+    writeWeather(globals, weather, exposure);
     device.queue.writeBuffer(uniform, 0, globals);
     for (const group of groups) {
       let visible = 0, shadowCount = 0;
@@ -139,7 +141,9 @@ export async function makeRenderer(canvas, world, creatures, onError) {
     const pass = encoder.beginRenderPass({ colorAttachments: [{ view: multisample.createView(), resolveTarget: context.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'discard', clearValue: [0.12, .25, .29, 1] }], depthStencilAttachment: { view: depth.createView(), depthLoadOp: 'clear', depthStoreOp: 'discard', depthClearValue: 1 } });
     pass.setBindGroup(0, bind); pass.setPipeline(sky); pass.draw(3); pass.setPipeline(scene);
     for (const group of groups) if (group.count) { pass.setVertexBuffer(0, group.mesh.vertex); pass.setVertexBuffer(1, group.buffer); pass.setIndexBuffer(group.mesh.index, 'uint32'); pass.drawIndexed(group.mesh.count, group.count); }
-    pass.setPipeline(water); pass.draw(4); pass.end(); device.queue.submit([encoder.finish()]);
+    pass.setPipeline(water); pass.draw(4);
+    if (weather.rain > .005 && exposure > 0 && player.y >= 0) { pass.setPipeline(rain); pass.draw(6 * 640); }
+    pass.end(); device.queue.submit([encoder.finish()]);
   }
   return { render, device, get size() { return [width, height]; } };
 }

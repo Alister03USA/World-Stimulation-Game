@@ -150,3 +150,7 @@ The embedded [CC0 reptile skin photo](https://opengameart.org/content/reptile-sk
 Forests now have fuller conifer crowns, a second conifer shape, larger ginkgo fans, clustered groves and more understory. Close ferns show finer divisions and curled young fronds; leaves have subtle vein shading, aged tips and flutter. Bark grooves, cycad cone scales, root alignment, fallen needles/frond fragments, twigs, pebbles, logs and stumps add detail near the player. Soil, sand, mud and rock use distinct procedural surface variation.
 
 Fine fern meshes are limited to nearby views, with simpler matching silhouettes farther away. Ground clutter has a short draw distance and reduced shadow cost. The original terrain heights, resource locations, animal models and survival objectives remain compatible. See [forest references and playtest](docs/FOREST_REFERENCES.md) for fossil-informed design, artistic limits and rendering notes.
+
+## Changing weather
+
+Clear skies gradually cloud over, passing showers bring wind and rain, coastal mist softens distant terrain, and the coast clears again. Weather follows saved simulation time and pauses with menus. The tent muffles rain and shelters nearby drops. Survival rules remain unchanged. See [weather details and validation](docs/WEATHER.md).

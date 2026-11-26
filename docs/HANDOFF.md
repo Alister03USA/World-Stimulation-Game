@@ -39,3 +39,6 @@ All 57 checks pass, retaining the original 42. Browser QA exercised gathering th
 Save version 2 retains the original key for migration. Keep gameplay time separate from wall time. Reserve dynamic instances before renderer initialization; sync toggles their active state and resource visibility. Rebuild a fresh combined collision array after construction/packing. Shared target resolution must gate both prompts and actions. Development fixtures are absent from release; development pointer lock is disabled to make fixture interactions predictable.
 
 Next playtest: an uninterrupted expedition with close predator encounters, campsite balance and long travel. A sustained GPU benchmark and physical mobile-device validation remain separate. AI uses local steering, and construction/animal collision shapes are approximations.
+## Weather handoff
+
+Weather now follows expedition elapsed time through clear, cloudy, shower, mist and clearing phases with smooth transitions. No save schema change is needed. weather.js owns the schedule, tent exposure and 76-float uniform packing; shaders.js owns cloud/light/fog, damp surfaces, wind and a 640-streak rain pool. Audio adds pooled rain/wind layers. Release excludes the four development weather fixtures. All 61 tests pass; final Chromium WebGPU startup and rain reload were checked. See WEATHER.md for exact coverage and limits.

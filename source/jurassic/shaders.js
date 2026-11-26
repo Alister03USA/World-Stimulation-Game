@@ -1,5 +1,5 @@
 export const common = /*wgsl*/`
-struct Globals { vp: mat4x4f, camera: vec4f, sun: vec4f, resolution: vec4f, right: vec4f, up: vec4f, forward: vec4f, misc: vec4f, lightVP: mat4x4f, effects: vec4f };
+struct Globals { vp: mat4x4f, camera: vec4f, sun: vec4f, resolution: vec4f, right: vec4f, up: vec4f, forward: vec4f, misc: vec4f, lightVP: mat4x4f, effects: vec4f, weather: vec4f, weatherMotion: vec4f, exposure: vec4f };
 @group(0) @binding(0) var<uniform> g: Globals;
 @group(0) @binding(1) var surfaceSampler: sampler;
 @group(0) @binding(2) var albedoMap: texture_2d_array<f32>;
@@ -14,16 +14,16 @@ fn sky(rd: vec3f) -> vec3f {
   let day = g.sun.w; let h = pow(max(rd.y, 0.), .5);
   var c = mix(vec3f(.62, .74, .76), vec3f(.16, .37, .57), h) * (.045 + .955 * day);
   let mu = max(dot(rd, g.sun.xyz), 0.);
-  c += vec3f(1., .88, .64) * pow(mu, 1200.) * day * 10.;
-  c += vec3f(.34, .23, .10) * pow(mu, 14.) * day;
+  c += vec3f(1., .88, .64) * pow(mu, 1200.) * day * 10. * (1. - g.weather.x * .97);
+  c += vec3f(.34, .23, .10) * pow(mu, 14.) * day * (1. - g.weather.x);
   if (rd.y > .025) {
-    let q = rd.xz / (rd.y + .17) * 2. + vec2f(g.camera.w * .002, 0.);
+    let q = rd.xz / (rd.y + .17) * 2. + g.weatherMotion.yz * g.weatherMotion.x * (.003 + g.weather.w * .006);
     let n = noise(q) * .6 + noise(q * 2.1) * .3 + noise(q * 4.1) * .1;
-    let cloud = smoothstep(.53, .76, n) * smoothstep(.025, .25, rd.y);
-    c = mix(c, vec3f(.95, .95, .87) * (.045 + .955 * day), cloud * .75);
-    c += vec3f(step(.998, hash(floor(rd.xz / max(rd.y, .08) * 350.))) * (1. - smoothstep(.08, .3, day)) * .7);
+    let cloud = smoothstep(mix(.64, .18, g.weather.x), mix(.84, .48, g.weather.x), n) * smoothstep(.025, .25, rd.y);
+    c = mix(c, mix(vec3f(.95, .95, .87), vec3f(.28, .34, .38), g.weather.x) * (.045 + .955 * day), cloud * .94);
+    c += vec3f(step(.998, hash(floor(rd.xz / max(rd.y, .08) * 350.))) * (1. - smoothstep(.08, .3, day)) * .7 * (1. - cloud));
   }
-  return c;
+  return mix(c, vec3f(.48, .56, .57) * (.04 + .96 * day), g.weather.z * .35 * (1. - h));
 }
 fn atmosphere(color: vec3f, wp: vec3f) -> vec3f {
   let v = wp - g.camera.xyz; let d = max(length(v), .001); let rd = v / d; var wet = 0.;
@@ -33,7 +33,7 @@ fn atmosphere(color: vec3f, wp: vec3f) -> vec3f {
   let trans = exp(-vec3f(.105, .041, .028) * wet);
   let water = vec3f(.018, .17, .23) * (.2 + .8 * g.sun.w);
   let c = color * trans + water * (1. - trans);
-  let haze = (1. - exp(-max(d - wet, 0.) * .0019)) * .7;
+  let haze = (1. - exp(-max(d - wet, 0.) * (.0019 + g.weather.z * .019))) * mix(.7, .98, g.weather.z);
   return mix(c, sky(rd), haze);
 }
 fn display(c0: vec3f, uv: vec2f) -> vec3f {
@@ -89,7 +89,7 @@ fn deform(i: Input) -> Deformed {
   }
   if (i.joint == 30.) {
     let wind = sin(g.camera.w * .75 + i.d.x * .055 + i.d.z * .08) + .35 * sin(g.camera.w * 1.7 + p.x * .4);
-    p.x += wind * min(p.y, 25.) * .012; p.z += sin(g.camera.w * .6 + i.d.x * .04) * p.y * .006;
+    p.x += wind * min(p.y, 25.) * .012 * (.5 + g.weather.w * 2.); p.z += sin(g.camera.w * .6 + i.d.x * .04) * p.y * .006 * (.5 + g.weather.w * 2.);
     let flutter = sin(g.camera.w * 2.3 + i.pivot.x * 3. + i.pivot.z * 2.) * .018 * i.weight;
     p.y += flutter; normal = rotateZ(normal, flutter * .6);
   }
@@ -175,14 +175,16 @@ fn fresnel(f0: vec3f, cosine: f32) -> vec3f { return f0 + (1. - f0) * pow(1. - c
       albedo *= .93 + noise(i.local.xz * 30. + i.local.y * 11.) * .10 * nearDetail; roughness = .72;
     } else if (i.surface == 43.) { albedo *= .82 + noise(i.world.xz * 28.) * .35; roughness = .98; }
   }
+  let damp = g.weatherMotion.w * max(normal.y, .15) * select(0., 1., i.surface >= 30. && i.surface <= 45.);
+  albedo *= 1. - damp * .22; roughness = mix(roughness, max(.24, roughness * .6), damp);
   let light = g.sun.xyz; let view = normalize(g.camera.xyz - i.world); let halfVector = normalize(light + view);
   let nl = max(dot(normal, light), 0.); let nv = max(dot(normal, view), .001); let nh = max(dot(normal, halfVector), 0.); let vh = max(dot(view, halfVector), 0.);
   let alpha = roughness * roughness; let a2 = alpha * alpha; let den = nh * nh * (a2 - 1.) + 1.; let distribution = a2 / max(PI * den * den, .0001);
   let k = (roughness + 1.) * (roughness + 1.) / 8.; let geometry = nv / (nv * (1. - k) + k) * nl / max(nl * (1. - k) + k, .001);
   let f = fresnel(vec3f(.035), vh); let specular = f * distribution * geometry / max(4. * nv * nl, .001);
   let shadow = visibility(i.world, normal); let day = g.sun.w;
-  let radiance = vec3f(3.1, 2.87, 2.43) * day; let diffuse = albedo * (1. - f) / PI;
-  let up = normal.y * .5 + .5; let ambient = mix(vec3f(.065, .060, .041), vec3f(.15, .205, .26), up) * (.10 + .90 * day);
+  let radiance = vec3f(3.1, 2.87, 2.43) * day * (1. - g.weather.x * .82); let diffuse = albedo * (1. - f) / PI;
+  let up = normal.y * .5 + .5; let ambient = mix(vec3f(.065, .060, .041), vec3f(.15, .205, .26), up) * (.10 + .90 * day) * (1. - g.weather.x * .2);
   var color = (diffuse + specular) * radiance * nl * shadow + albedo * ambient * ao;
   let fireVector = g.effects.xyz - i.world; let fireDistance = length(fireVector);
   color += albedo * vec3f(3.8, 1.5, .35) * g.effects.w * max(0., dot(normal, normalize(fireVector + vec3f(0., .001, 0.)))) / (1. + fireDistance * fireDistance * .55);
@@ -214,12 +216,34 @@ struct WaterOutput { @builtin(position) position: vec4f, @location(0) world: vec
 @fragment fn fs(i: WaterOutput) -> @location(0) vec4f {
   let t = g.camera.w; let p = i.world.xz;
   let slope = vec2f(sin(p.x * .35 + t) * .07 + sin(p.y * .73 - t * .8) * .035, cos(p.y * .30 + t * .7) * .08 + cos(p.x * .6 + t) * .03);
-  var normal = normalize(vec3f(slope.x, 1., slope.y)); let view = normalize(g.camera.xyz - i.world); let below = g.camera.y < 0.; if (below) { normal = -normal; }
+  let rainRipple = sin(p.x * 22. + t * 16.) * cos(p.y * 19. - t * 13.) * g.weather.y * .025;
+  var normal = normalize(vec3f(slope.x * (.65 + g.weather.w) + rainRipple, 1., slope.y * (.65 + g.weather.w) - rainRipple)); let view = normalize(g.camera.xyz - i.world); let below = g.camera.y < 0.; if (below) { normal = -normal; }
   let fresnel = .04 + .96 * pow(1. - abs(dot(view, normal)), 4.); let reflection = sky(reflect(-view, normal));
-  let sparkle = pow(max(dot(reflect(-g.sun.xyz, normal), view), 0.), 260.) * g.sun.w;
+  let sparkle = pow(max(dot(reflect(-g.sun.xyz, normal), view), 0.), 260.) * g.sun.w * (1. - g.weather.x * .95);
   let sea = vec3f(.025, .22, .21) * (.18 + .82 * g.sun.w);
   var color = mix(sea, reflection, fresnel * .85) + vec3f(1., .85, .57) * sparkle * 3.;
   if (below) { color = mix(vec3f(.10, .32, .39), reflection * .7, fresnel); }
   return vec4f(display(atmosphere(color, i.world), i.position.xy / g.resolution.xy), select(.62 + fresnel * .33, .70, below));
+}
+`;
+
+// A fixed pool of depth-tested world-space streaks, without per-frame particle allocations.
+export const rainShader = common + /*wgsl*/`
+struct RainOutput { @builtin(position) position: vec4f, @location(0) uv: vec2f, @location(1) alpha: f32, @location(2) worldY: f32 };
+@vertex fn vs(@builtin(vertex_index) index: u32) -> RainOutput {
+  let id = f32(index / 6u); let seed = vec2f(id, id * .73);
+  let corners = array<vec2f, 6>(vec2f(-1., 0.), vec2f(1., 0.), vec2f(-1., 1.), vec2f(-1., 1.), vec2f(1., 0.), vec2f(1., 1.));
+  let uv = corners[index % 6u]; let t = g.weatherMotion.x; let drift = g.weatherMotion.yz * g.weather.w * 3.;
+  let xz = fract((vec2f(hash(seed), hash(seed + 17.)) * 40. + drift * t - g.camera.xz) / 40.) * 40. + g.camera.xz - 20.;
+  let y = fract((hash(seed + 41.) * 30. - t * (12. + hash(seed + 9.) * 4.) - g.camera.y) / 30.) * 30. + g.camera.y - 10.;
+  let size = .3 + hash(seed + 3.) * .35; let point = vec3f(xz.x, y, xz.y) + vec3f(drift.x, -14., drift.y) * (uv.y * size / 14.) + g.right.xyz * uv.x * .009;
+  let distance = length(point - g.camera.xyz); var o: RainOutput; o.position = g.vp * vec4f(point, 1.); o.uv = uv; o.worldY = point.y;
+  o.alpha = smoothstep(.4, 2., distance) * (1. - smoothstep(15., 22., distance)) * smoothstep(hash(seed + 81.) - .1, hash(seed + 81.) + .1, g.weather.y) * g.exposure.x;
+  return o;
+}
+@fragment fn fs(i: RainOutput) -> @location(0) vec4f {
+  if (i.worldY < 0.) { discard; }
+  let opacity = (1. - abs(i.uv.x)) * sin(i.uv.y * PI) * i.alpha * .45;
+  return vec4f(vec3f(.48, .59, .65) * (.25 + g.sun.w * .65), opacity);
 }
 `;

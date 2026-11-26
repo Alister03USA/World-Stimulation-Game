@@ -7,7 +7,7 @@ import { build } from 'esbuild';
 import { createHash } from 'node:crypto';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const bundle = await build({ stdin: { contents: "export * from './jurassic/simulation.js'; export * from './jurassic/world.js'; export * from './jurassic/renderer.js'; export * from './jurassic/assets.js'; export * from './jurassic/terrain.js'; export * from './jurassic/wildlife.js'; export * from './jurassic/spatial.js'; export * from './jurassic/habitat.js'; export * from './jurassic/landscape.js'; export * from './jurassic/camping.js'; export * from './jurassic/adventure-world.js';", resolveDir: root }, write: false, bundle: true, format: 'cjs', platform: 'node', target: 'es2022', loader: { '.bin': 'binary', '.jpg': 'dataurl', '.png': 'dataurl' }, define: { __DEV__: 'false' },
+const bundle = await build({ stdin: { contents: "export * from './jurassic/simulation.js'; export * from './jurassic/world.js'; export * from './jurassic/renderer.js'; export * from './jurassic/assets.js'; export * from './jurassic/terrain.js'; export * from './jurassic/wildlife.js'; export * from './jurassic/spatial.js'; export * from './jurassic/habitat.js'; export * from './jurassic/landscape.js'; export * from './jurassic/camping.js'; export * from './jurassic/adventure-world.js'; export * from './jurassic/weather.js';", resolveDir: root }, write: false, bundle: true, format: 'cjs', platform: 'node', target: 'es2022', loader: { '.bin': 'binary', '.jpg': 'dataurl', '.png': 'dataurl' }, define: { __DEV__: 'false' },
   plugins: [{ name: 'abyssal-math', setup(b) { b.onLoad({ filter: /[\\/]src[\\/]math\.js$/ }, ({ path: p }) => ({ contents: readFileSync(p, 'utf8') + '\nexport { Mesh, icosphere, surfaceNets, sampler3, rnd, rr, rseed, vnoise, fbm, clamp, mix, sstep };', loader: 'js' })); } }] });
 const module = { exports: {} }; new Function('module', 'exports', bundle.outputFiles[0].text)(module, module.exports);
 const { newGame, movePlayer, updateSurvival, updateCreatures, interact, eat, inspect, ground, makeCreatures, makeWorld, saveGame, loadGame, SAVE_KEY, DAY_SECONDS, CACHE, SPRING, SPECIES, FLORA, writeLightMatrix, detailedAnimals, unpackMesh, writeTransform } = module.exports;
@@ -482,4 +482,39 @@ test('land predators cannot bite an unreachable perch and marine animals retain 
   assert.equal(c.state, 'Watching'); assert.equal(c.attackWindup, 0); assert.equal(g.health, health);
   const marine = makeCreatures().find(c => c.role === 'marine'); g.player.x = marine.x; g.player.z = marine.z;
   updateCreatures(g, [marine], .1, []); assert.notEqual(marine.state, 'Watching');
+});
+
+test('weather fronts are bounded, repeatable and continuous across every phase boundary', () => {
+  const { weatherAt } = module.exports, keys = ['cloud', 'rain', 'fog', 'wind', 'wetness'];
+  for (let time = 0; time < 1900; time += .7) {
+    const w = weatherAt(time); assert.deepEqual(w, weatherAt(time));
+    for (const key of keys) assert.ok(Number.isFinite(w[key]) && w[key] >= 0 && w[key] <= 1);
+    assert.ok(Math.abs(Math.hypot(w.windX, w.windZ) - 1) < 1e-9);
+  }
+  for (const time of [110, 200, 305, 380, 465, 600, 710, 800, 1200]) for (const key of keys) assert.ok(Math.abs(weatherAt(time - .001)[key] - weatherAt(time + .001)[key]) < .001);
+  assert.equal(weatherAt(60).rain, 0); assert.ok(weatherAt(255).rain > .5); assert.ok(weatherAt(425).fog > .8); assert.equal(weatherAt(550).rain, 0);
+});
+
+test('weather resumes from saved simulation time and a fresh expedition starts clear', () => {
+  const { weatherAt } = module.exports, g = newGame(), memory = new Map(), storage = { setItem: (k, v) => memory.set(k, v), getItem: k => memory.get(k) };
+  g.elapsed = 255; const before = weatherAt(g.elapsed); saveGame(g, storage); const loaded = loadGame(storage, campWorld());
+  assert.deepEqual(weatherAt(loaded.elapsed), before); assert.deepEqual(weatherAt(g.elapsed), before);
+  assert.equal(weatherAt(newGame().elapsed).rain, 0); assert.equal(weatherAt(newGame().elapsed).phase, 0);
+  updateSurvival(loaded, 1); assert.equal(weatherAt(loaded.elapsed).time, before.time + 1);
+});
+
+test('rain shelter uses the rotated tent roof and never shelters players beside or above it', () => {
+  const { rainExposure } = module.exports, tent = { x: 5, z: 8, y: 3, yaw: Math.PI / 3 };
+  assert.equal(rainExposure({ x: 5, z: 8, y: 4.7 }, tent), 0);
+  assert.equal(rainExposure({ x: 5, z: 8, y: 6 }, tent), 1);
+  assert.equal(rainExposure({ x: 9, z: 8, y: 4.7 }, tent), 1);
+  const edge = { x: 5 + Math.cos(tent.yaw), z: 8 - Math.sin(tent.yaw), y: 4.7 };
+  assert.equal(rainExposure(edge, tent), 1); assert.equal(rainExposure({ ...edge, y: 3.4 }, tent), 0);
+  assert.equal(rainExposure({ x: 0, z: 0, y: -2 }), 0); assert.equal(rainExposure({ x: 0, z: 0, y: 2 }), 1);
+});
+
+test('weather uniforms retain existing fire and light slots without overflowing the buffer', () => {
+  const { weatherAt, writeWeather } = module.exports, uniforms = new Float32Array(76).fill(-1), weather = weatherAt(255);
+  writeWeather(uniforms, weather, 0); assert.ok(uniforms.subarray(0, 64).every(v => v === -1));
+  assert.equal(uniforms[68], 255); assert.equal(uniforms[72], 0); assert.ok(uniforms.every(Number.isFinite));
 });

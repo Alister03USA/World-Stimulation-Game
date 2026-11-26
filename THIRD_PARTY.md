@@ -47,3 +47,5 @@ The forest detail pass adds only code-authored geometry and procedural surface p
 ## Campsite assets
 
 Resource bundles, tools, woven tent, fire, chest, climbing branches, flame/smoke geometry and crackling audio are code-authored under the project MIT license. No new external artwork or audio is bundled for this survival loop.
+
+Weather sky patterns, rain streaks, damp shading and pooled rain/wind audio are code-authored under MIT; no external weather assets were added.

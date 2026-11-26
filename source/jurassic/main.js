@@ -7,6 +7,7 @@ import { portraits } from './portraits.js';
 import { resolveTarget, useTarget, useTool, equip, stepAdventure, placementSite, placementCheck, placeStructure, rebuildCampColliders } from './camping.js';
 import { syncAdventure } from './adventure-world.js';
 import { makeCampingUI } from './camping-ui.js';
+import { weatherAt, rainExposure } from './weather.js';
 
 const $ = id => document.getElementById(id), canvas = $('world'), audio = makeAudio();
 let game = newGame(), creatures = makeCreatures(), world, renderer, paused = true, ready = false, fatal = false, last = 0, hudTime = 0, saveTime = 0, renderTime = 0, seen = null, toastTime = 0, frames = 0, fps = 60;
@@ -183,6 +184,7 @@ function updateHUD() {
   const hour = ((game.clock / DAY_SECONDS * 24 + 6) % 24), minutes = Math.floor((hour % 1) * 60);
   $('clock').textContent = `${String(Math.floor(hour)).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
   $('daylight-label').textContent = hour > 6 && hour < 18 ? 'Daylight' : 'Nightfall';
+  $('weather-label').textContent = weatherAt(game.elapsed).label;
   const h = ground(game.player.x, game.player.z), wet = game.player.y < 0;
   $('biome').textContent = regionAt(game.player.x, game.player.z, h);
   $('mode').textContent = wet ? `${Math.round(-game.player.y)} m below the surface` : game.player.swimming ? 'Swimming' : h < 0 ? 'Wading' : 'On land';
@@ -230,9 +232,10 @@ function frame(now) {
   // Cap at 60 fps, and 10 fps while paused; avoid running the GPU at the display's maximum refresh rate.
   if (renderTime >= (paused ? .1 : 1 / 60) - .001) {
     const day = .10 + .90 * Math.max(0, Math.sin(game.clock / DAY_SECONDS * Math.PI * 2 + .23));
-    syncAdventure(game, world); renderer.render(game.player, game.clock, day, game.damage, renderTime, game.dead || game.won ? null : game.camp.fire); renderTime = 0;
+    const weather = weatherAt(game.elapsed), exposure = rainExposure(game.player, game.camp.tent);
+    syncAdventure(game, world); renderer.render(game.player, game.clock, day, game.damage, renderTime, game.dead || game.won ? null : game.camp.fire, weather, exposure); renderTime = 0;
     const fire = game.camp.fire, fireVolume = fire?.burning ? 1 / (1 + Math.hypot(game.player.x - fire.x, game.player.z - fire.z) ** 2 * .1) : 0;
-    audio.update(game.player.y < 0, ground(game.player.x, game.player.z) < 5, paused, fireVolume);
+    audio.update(game.player.y < 0, ground(game.player.x, game.player.z) < 5, paused, fireVolume, weather, exposure);
   }
 }
 
@@ -271,6 +274,7 @@ async function boot() {
       document.body.append(panel);
       const viewPoint = (point, offset = 2.6) => { const x = point.x, z = point.z + offset, y = ground(x, z) + 1.7; Object.assign(game.player, { x, z, y, yaw: offset < 0 ? Math.PI : 0, pitch: Math.atan2(point.y - y, Math.abs(offset)), climb: null, swimming: false, grounded: true, vx: 0, vy: 0, vz: 0 }); game.resting = false; updateHUD(); };
       const fixture = (name, run) => { const b = document.createElement('button'); b.textContent = name; b.onclick = run; panel.append(b); };
+      for (const [name, time] of [['Clear', 60], ['Cloudy', 155], ['Rain', 255], ['Mist', 425]]) fixture('Weather: ' + name, () => { game.elapsed = time; updateHUD(); });
       for (const item of ['wood', 'stone', 'fiber', 'timber']) fixture('Next ' + item, () => { const n = world.adventure.nodes.filter(n => !game.depleted.includes(n.id) && (item === 'timber' ? n.requires : n.item === item && !n.requires)).sort((a, b) => Math.hypot(a.x - 56, a.z - 32) - Math.hypot(b.x - 56, b.z - 32))[0]; if (n) viewPoint({ ...n, y: n.y + .25 }); });
       fixture('Climb entry', () => viewPoint({ ...world.adventure.climbs[0], y: world.adventure.climbs[0].y + 1.4 }, 1.8));
       fixture('Supply cache', () => viewPoint({ ...CACHES[0], y: ground(CACHES[0].x, CACHES[0].z) + .65 }, 2));
